@@ -1,0 +1,33 @@
+export const TIMEZONES = [
+  { value: 'America/New_York', label: 'Eastern Time (ET)' },
+  { value: 'America/Chicago', label: 'Central Time (CT)' },
+  { value: 'America/Denver', label: 'Mountain Time (MT)' },
+  { value: 'America/Los_Angeles', label: 'Pacific Time (PT)' },
+  { value: 'America/Anchorage', label: 'Alaska Time (AKT)' },
+  { value: 'Pacific/Honolulu', label: 'Hawaii Time (HT)' },
+  { value: 'America/Sao_Paulo', label: 'Brazil Time (BRT)' },
+  { value: 'America/Argentina/Buenos_Aires', label: 'Argentina Time (ART)' },
+  { value: 'Europe/London', label: 'Greenwich Mean Time (GMT)' },
+  { value: 'Europe/Paris', label: 'Central European Time (CET)' },
+  { value: 'Europe/Berlin', label: 'Central European Time (CET)' },
+  { value: 'Europe/Moscow', label: 'Moscow Time (MSK)' },
+  { value: 'Africa/Johannesburg', label: 'South Africa Time (SAST)' },
+  { value: 'Africa/Lagos', label: 'West Africa Time (WAT)' },
+  { value: 'Asia/Dubai', label: 'Gulf Standard Time (GST)' },
+  { value: 'Asia/Kolkata', label: 'India Standard Time (IST)' },
+  { value: 'Asia/Bangkok', label: 'Indochina Time (ICT)' },
+  { value: 'Asia/Singapore', label: 'Singapore Time (SGT)' },
+  { value: 'Asia/Shanghai', label: 'China Standard Time (CST)' },
+  { value: 'Asia/Tokyo', label: 'Japan Standard Time (JST)' },
+  { value: 'Australia/Sydney', label: 'Australian Eastern Time (AEST)' },
+  { value: 'Pacific/Auckland', label: 'New Zealand Time (NZST)' },
+  { value: 'UTC', label: 'Coordinated Universal Time (UTC)' },
+];
+
+export const PLATFORMS = [
+  { value: 'instagram', label: 'Instagram' },
+  { value: 'facebook', label: 'Facebook' },
+  { value: 'twitter', label: 'Twitter/X' },
+  { value: 'linkedin', label: 'LinkedIn' },
+  { value: 'tiktok', label: 'TikTok' },
+];
