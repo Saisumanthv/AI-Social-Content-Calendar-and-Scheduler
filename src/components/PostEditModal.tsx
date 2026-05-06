@@ -5,17 +5,21 @@ import { Button } from './ui/Button';
 import { Input, Textarea } from './ui/Input';
 import { TagBadge } from './ui/Badge';
 import { supabase } from '../lib/supabase';
-import { useUpdatePost } from '../hooks/useCalendar';
+import { useTriggerWebhook, useUpdatePost, useUpdatePostStatus } from '../hooks/useCalendar';
 import type { ContentCalendarPost } from '../types/database';
 
 interface Props {
   post: ContentCalendarPost | null;
   brandId: string;
   onClose: () => void;
+  onDelete?: (post: ContentCalendarPost) => void;
+  onMoveToDrafts?: (post: ContentCalendarPost) => void;
 }
 
-export function PostEditModal({ post, brandId, onClose }: Props) {
+export function PostEditModal({ post, brandId, onClose, onDelete, onMoveToDrafts }: Props) {
   const updatePost = useUpdatePost(brandId);
+  const triggerWebhook = useTriggerWebhook(brandId);
+  const updateStatus = useUpdatePostStatus(brandId);
   const [hook, setHook] = useState('');
   const [caption, setCaption] = useState('');
   const [hashtagInput, setHashtagInput] = useState('');
@@ -81,6 +85,44 @@ export function PostEditModal({ post, brandId, onClose }: Props) {
           asset_url: assetUrl,
         },
       });
+      onClose();
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
+
+  async function handleSaveAndSchedule() {
+    if (!post) return;
+    setError('');
+
+    try {
+      await updatePost.mutateAsync({
+        postId: post.id,
+        updates: {
+          hook,
+          caption,
+          hashtags,
+          image_prompt: imagePrompt,
+          scheduled_time: `${scheduledTime}:00`,
+          asset_url: assetUrl,
+        },
+      });
+
+      if (!assetUrl) {
+        throw new Error('Upload media before scheduling this post.');
+      }
+
+      await triggerWebhook.mutateAsync({
+        post_id: post.id,
+        brand_id: post.brand_id,
+        caption,
+        hashtags,
+        asset_url: assetUrl,
+        platform: post.platform,
+        scheduled_utc: post.post_date,
+        hook,
+      });
+
       onClose();
     } catch (err) {
       setError((err as Error).message);
@@ -170,11 +212,41 @@ export function PostEditModal({ post, brandId, onClose }: Props) {
           hint="Time will be converted to UTC based on your brand timezone"
         />
 
+        <p className="text-xs text-muted-foreground">
+          Upload media, then use <strong>Save & Schedule</strong> to move this post from Draft to Scheduled.
+        </p>
+
         {error && (
           <p className="text-sm text-error-600 bg-error-50 border border-error-200 rounded-md px-3 py-2">{error}</p>
         )}
 
         <div className="flex justify-end gap-3 pt-2">
+          {post?.status === 'scheduled' && (
+            <Button
+              variant="secondary"
+              onClick={async () => {
+                await updateStatus.mutateAsync({ postId: post.id, status: 'draft' });
+                onMoveToDrafts?.(post);
+                onClose();
+              }}
+              loading={updateStatus.isPending}
+            >
+              Move to Drafts
+            </Button>
+          )}
+          {post && onDelete && (
+            <Button
+              variant="danger"
+              onClick={() => {
+                if (window.confirm('Delete this post? This cannot be undone.')) {
+                  onDelete(post);
+                  onClose();
+                }
+              }}
+            >
+              Delete Post
+            </Button>
+          )}
           <Button variant="secondary" onClick={onClose}>Cancel</Button>
           <Button
             onClick={handleSave}
@@ -182,6 +254,15 @@ export function PostEditModal({ post, brandId, onClose }: Props) {
             icon={<Save size={15} />}
           >
             Save Changes
+          </Button>
+          <Button
+            variant="success"
+            onClick={handleSaveAndSchedule}
+            loading={triggerWebhook.isPending}
+            icon={<Save size={15} />}
+            disabled={!assetUrl}
+          >
+            Save & Schedule
           </Button>
         </div>
       </div>

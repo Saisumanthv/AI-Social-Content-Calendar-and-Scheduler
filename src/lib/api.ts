@@ -15,15 +15,20 @@ async function edgeFetch<T>(
   body: unknown,
 ): Promise<T> {
   const { data: { session } } = await supabase.auth.getSession();
-  const token = session?.access_token ?? SUPABASE_ANON_KEY;
+
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    Apikey: SUPABASE_ANON_KEY,
+  };
+
+  // Only send Authorization when we have a real user JWT.
+  if (session?.access_token) {
+    headers.Authorization = `Bearer ${session.access_token}`;
+  }
 
   const res = await fetch(`${SUPABASE_URL}/functions/v1/${functionName}`, {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-      Apikey: SUPABASE_ANON_KEY,
-    },
+    headers,
     body: JSON.stringify(body),
   });
 
@@ -99,6 +104,28 @@ export async function updatePost(
   return data;
 }
 
+// Fallback safety: scheduled posts in the past should never remain scheduled.
+export async function failOverdueScheduledPosts(brandId: string): Promise<{ updated: number }> {
+  const { data, error } = await supabase.rpc('fail_overdue_scheduled_posts', {
+    p_brand_id: brandId,
+  });
+
+  if (error) throw error;
+  return { updated: Number(data ?? 0) };
+}
+
+// Trigger post status transitions (scheduled → published/failed)
+export async function triggerPostStatusTransitions(): Promise<{ processed: number }> {
+  const { data, error } = await supabase.functions.invoke('publish-scheduled', {
+    body: { action: 'check_and_transition' },
+  });
+
+  if (error) throw new Error(error.message);
+  return (data as { processed?: number } | null) && typeof (data as { processed?: number }).processed === 'number'
+    ? { processed: (data as { processed: number }).processed }
+    : { processed: 0 };
+}
+
 export async function deleteCalendarPost(postId: string): Promise<void> {
   const { error } = await supabase
     .from('content_calendar')
@@ -139,6 +166,34 @@ export async function upsertPlatformConnection(
 
   if (error) throw error;
   return data;
+}
+
+export async function deletePlatformConnection(brandId: string, platformName: string): Promise<void> {
+  const { error } = await supabase
+    .from('platform_connections')
+    .delete()
+    .eq('brand_id', brandId)
+    .eq('platform_name', platformName);
+
+  if (error) throw error;
+}
+
+export async function getOAuthStartUrl(platform: string): Promise<string> {
+  const res = await fetch(`${SUPABASE_URL}/functions/v1/oauth-start?platform=${encodeURIComponent(platform)}`, {
+    method: 'GET',
+    headers: {
+      Apikey: SUPABASE_ANON_KEY,
+    },
+  });
+
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(err || 'Failed to start OAuth flow');
+  }
+
+  const data = await res.json() as { url?: string };
+  if (!data.url) throw new Error('OAuth start response missing url');
+  return data.url;
 }
 
 // Edge Functions

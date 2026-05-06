@@ -35,6 +35,9 @@ export interface PlatformConnection {
   encrypted_token: string;
   account_id: string;
   account_name: string;
+  scopes: string[] | null;
+  status: string;
+  needs_reauth: boolean;
   expires_at: string | null;
   created_at: string;
   updated_at: string;
@@ -58,7 +61,11 @@ export interface GenerateContentPayload {
   target_audience: string;
   timezone: string;
   start_date: string;
-  platform: string;
+  scheduled_time: string;
+  idea: string;
+  platforms: string[];
+  count?: number;
+  asset_url: string;
 }
 
 export interface TriggerWebhookPayload {

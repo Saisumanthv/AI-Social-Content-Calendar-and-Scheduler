@@ -232,6 +232,29 @@ CREATE POLICY "Users can delete own platform connections"
 
 CREATE INDEX IF NOT EXISTS platform_connections_brand_id_idx ON platform_connections(brand_id);
 
+-- Force overdue scheduled posts to fail so past dates never remain scheduled.
+CREATE OR REPLACE FUNCTION fail_overdue_scheduled_posts(p_brand_id uuid)
+RETURNS integer
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  updated_count integer := 0;
+BEGIN
+  UPDATE content_calendar
+  SET status = 'failed'
+  WHERE brand_id = p_brand_id
+    AND status = 'scheduled'
+    AND post_date < now();
+
+  GET DIAGNOSTICS updated_count = ROW_COUNT;
+  RETURN updated_count;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION fail_overdue_scheduled_posts(uuid) TO authenticated;
+
 -- Updated_at triggers
 CREATE OR REPLACE FUNCTION update_updated_at_column()
 RETURNS TRIGGER AS $$

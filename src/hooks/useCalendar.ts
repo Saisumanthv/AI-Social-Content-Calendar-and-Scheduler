@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   getCalendarPosts,
+  getPlatformConnections,
   updatePost,
   updatePostStatus,
   deleteCalendarPost,
@@ -14,6 +15,14 @@ export function useCalendarPosts(brandId: string | undefined) {
   return useQuery({
     queryKey: ['calendar', brandId],
     queryFn: () => getCalendarPosts(brandId!),
+    enabled: !!brandId,
+  });
+}
+
+export function usePlatformConnections(brandId: string | undefined) {
+  return useQuery({
+    queryKey: ['platform-connections', brandId],
+    queryFn: () => getPlatformConnections(brandId!),
     enabled: !!brandId,
   });
 }
