@@ -136,6 +136,15 @@ export function PostEditModal({ post, brandId, onClose, onDelete, onMoveToDrafts
   return (
     <Modal open={!!post} onClose={onClose} title={`Edit Post — ${formattedDate}`} maxWidth="xl">
       <div className="space-y-5">
+        {post?.status === 'failed' && (
+          <div className="rounded-lg border border-error-200 bg-error-50 px-4 py-3 text-sm text-error-700">
+            <p className="font-semibold text-error-800">Failed reason</p>
+            <p className="mt-1 whitespace-pre-wrap">
+              {post.last_error || 'This post was marked failed because the publishing job did not complete before the scheduled time.'}
+            </p>
+          </div>
+        )}
+
         {/* Media */}
         <div>
           <label className="label"><Image size={14} className="inline mr-1.5" />Media Asset</label>
@@ -205,11 +214,11 @@ export function PostEditModal({ post, brandId, onClose, onDelete, onMoveToDrafts
         </div>
 
         <Input
-          label="Scheduled Time (local)"
+          label="Scheduled Time (IST)"
           type="time"
           value={scheduledTime}
           onChange={e => setScheduledTime(e.target.value)}
-          hint="Time will be converted to UTC based on your brand timezone"
+          hint="Time in India Standard Time (UTC+5:30)"
         />
 
         <p className="text-xs text-muted-foreground">

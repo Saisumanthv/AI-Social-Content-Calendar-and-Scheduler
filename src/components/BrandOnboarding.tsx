@@ -5,7 +5,7 @@ import { useUpsertBrandProfile } from '../hooks/useBrandProfile';
 import { Button } from './ui/Button';
 import { Input, Textarea } from './ui/Input';
 import { TagBadge } from './ui/Badge';
-import { TIMEZONES } from '../lib/timezones';
+import { PLATFORMS } from '../lib/timezones';
 import type { BrandProfile } from '../types/database';
 
 const TONE_OPTIONS = [
@@ -33,7 +33,7 @@ export function BrandOnboarding({ existingProfile, onComplete }: Props) {
   const [pillars, setPillars] = useState<string[]>(existingProfile?.content_pillars ?? []);
   const [pillarInput, setPillarInput] = useState('');
   const [targetAudience, setTargetAudience] = useState(existingProfile?.target_audience ?? '');
-  const [timezone, setTimezone] = useState(existingProfile?.timezone ?? 'UTC');
+  const timezone = 'Asia/Kolkata'; // Hardcoded to IST for India-only app
   const [error, setError] = useState('');
 
   const isEdit = !!existingProfile;
@@ -212,21 +212,12 @@ export function BrandOnboarding({ existingProfile, onComplete }: Props) {
                 onChange={e => setTargetAudience(e.target.value)}
                 rows={3}
               />
-              <div className="space-y-1.5 mt-4">
-                <label className="label">
-                  <Globe size={14} className="inline mr-1.5" />
-                  Timezone
-                </label>
-                <select
-                  value={timezone}
-                  onChange={e => setTimezone(e.target.value)}
-                  className="input"
-                >
-                  {TIMEZONES.map(tz => (
-                    <option key={tz.value} value={tz.value}>{tz.label}</option>
-                  ))}
-                </select>
-                <p className="text-xs text-muted-foreground">Used to schedule posts at the right local time</p>
+              <div className="mt-4 p-3 bg-primary-50 border border-primary-200 rounded-lg">
+                <p className="text-sm text-primary-700 font-medium flex items-center gap-2">
+                  <Globe size={14} />
+                  India Standard Time (IST)
+                </p>
+                <p className="text-xs text-primary-600 mt-1">All posts are scheduled in Indian Standard Time (UTC+5:30)</p>
               </div>
             </div>
           </div>

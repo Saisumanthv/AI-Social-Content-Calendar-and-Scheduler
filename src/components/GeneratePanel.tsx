@@ -121,7 +121,7 @@ export function GeneratePanel({ brand, hasExistingPosts }: Props) {
         brand_tone: brand.brand_tone,
         content_pillars: brand.content_pillars,
         target_audience: brand.target_audience,
-        timezone: brand.timezone,
+        timezone: 'Asia/Kolkata', // India Standard Time (IST)
         start_date: startDate,
         scheduled_time: `${scheduledTime}:00`,
         idea: idea.trim(),

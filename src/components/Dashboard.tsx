@@ -150,7 +150,7 @@ export function Dashboard() {
             </div>
             <div className="hidden sm:block">
               <p className="text-sm font-semibold text-foreground leading-tight">{brand.brand_name}</p>
-              <p className="text-xs text-muted-foreground">{brand.timezone}</p>
+              <p className="text-xs text-muted-foreground">India Standard Time (IST)</p>
             </div>
           </div>
 

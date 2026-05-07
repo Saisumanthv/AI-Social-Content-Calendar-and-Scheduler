@@ -9,7 +9,8 @@ DECLARE
   updated_count integer := 0;
 BEGIN
   UPDATE content_calendar
-  SET status = 'failed'
+  SET status = 'failed',
+      last_error = COALESCE(last_error, 'Post missed its scheduled publish window before the publishing job ran.')
   WHERE brand_id = p_brand_id
     AND status = 'scheduled'
     AND post_date < now();

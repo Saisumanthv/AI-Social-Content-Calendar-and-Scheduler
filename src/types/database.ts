@@ -22,6 +22,7 @@ export interface ContentCalendarPost {
   image_prompt: string;
   asset_url: string | null;
   status: PostStatus;
+  last_error: string | null;
   platform: string;
   scheduled_time: string;
   created_at: string;

@@ -1,5 +1,4 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { createClient } from 'npm:@supabase/supabase-js@2';
 
 interface TokenResponse {
   access_token: string;
@@ -39,10 +38,9 @@ async function encrypt(plaintext: string, keyB64: string) {
 }
 
 async function getLinkedInProfile(accessToken: string): Promise<LinkedInProfileResponse> {
-  const res = await fetch('https://api.linkedin.com/v2/me?projection=(id,localizedFirstName,localizedLastName)', {
+  const res = await fetch('https://api.linkedin.com/v2/userinfo', {
     headers: {
       Authorization: `Bearer ${accessToken}`,
-      'X-Restli-Protocol-Version': '2.0.0',
     },
   });
 
@@ -50,7 +48,13 @@ async function getLinkedInProfile(accessToken: string): Promise<LinkedInProfileR
     throw new Error(`LinkedIn profile lookup failed (${res.status})`);
   }
 
-  return await res.json();
+  const data = await res.json();
+  // Map userinfo response to our interface
+  return {
+    id: data.sub, // userinfo returns 'sub' instead of 'id'
+    localizedFirstName: data.given_name,
+    localizedLastName: data.family_name,
+  };
 }
 
 function buildResultHtml(status: 'connected' | 'error', platform: string, message: string) {
@@ -126,19 +130,17 @@ async function exchangeCodeForToken(platform: string, code: string) : Promise<To
   }
 }
 
-addEventListener('fetch', (evt) => {
-  evt.respondWith(handle(evt.request));
-});
+Deno.serve((req) => handle(req));
 
 async function handle(req: Request) {
   try {
     const url = new URL(req.url);
-    const platform = url.searchParams.get('platform');
+    const platform = url.searchParams.get('platform') || 'linkedin';
     const code = url.searchParams.get('code');
     const state = url.searchParams.get('state');
 
-    if (!platform || !code) {
-      return new Response(JSON.stringify({ error: 'platform and code required' }), { status: 400 });
+    if (!code) {
+      return new Response(JSON.stringify({ error: 'code required' }), { status: 400 });
     }
 
     const token = await exchangeCodeForToken(platform, code);
@@ -159,6 +161,7 @@ async function handle(req: Request) {
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const { createClient } = await import('npm:@supabase/supabase-js@2');
     const supabase = createClient(supabaseUrl, serviceKey);
 
     // Upsert into platform_connections. Expect state to be brand_id or similar.

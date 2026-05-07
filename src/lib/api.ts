@@ -10,6 +10,10 @@ import type {
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 
+if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+  throw new Error('Missing VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY. Create a .env file from .env.example and restart Vite.');
+}
+
 async function edgeFetch<T>(
   functionName: string,
   body: unknown,
@@ -179,11 +183,19 @@ export async function deletePlatformConnection(brandId: string, platformName: st
 }
 
 export async function getOAuthStartUrl(platform: string): Promise<string> {
+  const { data: { session } } = await supabase.auth.getSession();
+
+  const headers: Record<string, string> = {
+    Apikey: SUPABASE_ANON_KEY,
+  };
+
+  if (session?.access_token) {
+    headers.Authorization = `Bearer ${session.access_token}`;
+  }
+
   const res = await fetch(`${SUPABASE_URL}/functions/v1/oauth-start?platform=${encodeURIComponent(platform)}`, {
     method: 'GET',
-    headers: {
-      Apikey: SUPABASE_ANON_KEY,
-    },
+    headers,
   });
 
   if (!res.ok) {

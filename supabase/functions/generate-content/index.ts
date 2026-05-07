@@ -95,6 +95,47 @@ async function callGroq(prompt: string, apiKey: string): Promise<GeneratedPost[]
   return parseAndValidateJson(text);
 }
 
+function localToUTC(dateStr: string, timeStr: string): string {
+  // Convert user's local IST time to UTC
+  // IST is UTC+5:30, so we subtract 5:30 to get UTC
+  // Example: May 6 23:40 IST = May 6 18:10 UTC
+  
+  const localDateTime = new Date(`${dateStr}T${timeStr}:00`);
+  
+  // Format this datetime as if it were in IST timezone to get the offset
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  });
+  
+  const parts = formatter.formatToParts(localDateTime);
+  const toValue = (type: string) => parseInt(parts.find(p => p.type === type)?.value || '0');
+  
+  // This is what the localDateTime looks like when formatted in IST
+  const formattedDate = new Date(
+    toValue('year'),
+    toValue('month') - 1,
+    toValue('day'),
+    toValue('hour'),
+    toValue('minute'),
+    toValue('second')
+  );
+  
+  // Calculate timezone offset
+  const offsetMs = localDateTime.getTime() - formattedDate.getTime();
+  
+  // Apply offset to get actual UTC time
+  const utcTime = new Date(localDateTime.getTime() + offsetMs);
+  
+  return utcTime.toISOString();
+}
+
 function parseAndValidateJson(raw: string): GeneratedPost[] {
   // Strip markdown code fences if present
   let cleaned = raw.trim();
@@ -238,7 +279,7 @@ Deno.serve(async (req: Request) => {
 
     const rows = generatedPosts.map((p) => ({
       brand_id,
-      post_date: new Date(`${p.post_date}T${scheduledTime}Z`).toISOString(),
+      post_date: localToUTC(p.post_date, scheduledTime.substring(0, 5)),
       hook: p.hook,
       caption: p.caption,
       hashtags: p.hashtags,
