@@ -1,4 +1,3 @@
-import type { ReactNode } from 'react';
 import type { PostStatus } from '../../types/database';
 
 interface BadgeProps {
@@ -18,7 +17,7 @@ export function StatusBadge({ status }: BadgeProps) {
 }
 
 interface TagBadgeProps {
-  children: ReactNode;
+  children: string;
   onRemove?: () => void;
 }
 

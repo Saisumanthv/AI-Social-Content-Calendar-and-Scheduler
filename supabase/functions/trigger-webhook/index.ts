@@ -23,14 +23,9 @@ function convertToUtc(localTime: string, timezone: string, postDate: string): st
     const [hours, minutes] = localTime.split(":").map(Number);
     const [year, month, day] = postDate.split("T")[0].split("-").map(Number);
 
-    // Use Intl to get timezone offset
     const localDate = new Date(year, month - 1, day, hours, minutes, 0);
-    const utcDate = new Date(
-      localDate.toLocaleString("en-US", { timeZone: "UTC" })
-    );
-    const tzDate = new Date(
-      localDate.toLocaleString("en-US", { timeZone: timezone })
-    );
+    const utcDate = new Date(localDate.toLocaleString("en-US", { timeZone: "UTC" }));
+    const tzDate = new Date(localDate.toLocaleString("en-US", { timeZone: timezone }));
     const offset = utcDate.getTime() - tzDate.getTime();
     const scheduledUtc = new Date(localDate.getTime() + offset);
     return scheduledUtc.toISOString();
@@ -62,7 +57,6 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // Fetch brand profile for timezone
     const { data: brand, error: brandError } = await supabase
       .from("brand_profiles")
       .select("timezone")
@@ -73,7 +67,6 @@ Deno.serve(async (req: Request) => {
       throw new Error("Brand profile not found");
     }
 
-    // Fetch post for scheduled_time
     const { data: post, error: postError } = await supabase
       .from("content_calendar")
       .select("scheduled_time, post_date, asset_url, status, image_prompt")
@@ -84,10 +77,8 @@ Deno.serve(async (req: Request) => {
       throw new Error("Post not found");
     }
 
-    // Convert local time to UTC
     const scheduledUtc = convertToUtc(post.scheduled_time, brand.timezone, post.post_date);
 
-    // Update post status to scheduled
     const { error: updateError } = await supabase
       .from("content_calendar")
       .update({ status: "scheduled" })
@@ -95,58 +86,52 @@ Deno.serve(async (req: Request) => {
 
     if (updateError) throw updateError;
 
-    let webhookStatus = "not_configured";
-    let webhookError: string | null = null;
-
-    // Fire n8n webhook if configured (non-blocking - don't fail the request if webhook fails)
     if (N8N_WEBHOOK_URL) {
-      try {
-        const webhookBody = {
-          post_id,
-          brand_id: payload.brand_id,
-          caption: payload.caption,
-          hashtags: payload.hashtags,
-          asset_url: payload.asset_url ?? null,
-          platform: payload.platform,
-          hook: payload.hook,
-          post_date: post.post_date,
-          image_prompt: post.image_prompt,
-          scheduled_utc: scheduledUtc,
-          timestamp: new Date().toISOString(),
-        };
+      const webhookBody = {
+        post_id,
+        brand_id: payload.brand_id,
+        caption: payload.caption,
+        hashtags: payload.hashtags,
+        asset_url: payload.asset_url ?? null,
+        platform: payload.platform,
+        hook: payload.hook,
+        post_date: post.post_date,
+        image_prompt: post.image_prompt,
+        scheduled_utc: scheduledUtc,
+        timestamp: new Date().toISOString(),
+      };
 
-        const n8nRes = await fetch(N8N_WEBHOOK_URL, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            ...(N8N_SECRET_TOKEN ? {
-              "Authorization": `Bearer ${N8N_SECRET_TOKEN}`,
-              "X-N8N-Token": N8N_SECRET_TOKEN,
-            } : {}),
-          },
-          body: JSON.stringify(webhookBody),
-        });
+      const n8nRes = await fetch(N8N_WEBHOOK_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(N8N_SECRET_TOKEN ? {
+            "Authorization": `Bearer ${N8N_SECRET_TOKEN}`,
+            "X-N8N-Token": N8N_SECRET_TOKEN,
+          } : {}),
+        },
+        body: JSON.stringify(webhookBody),
+      });
 
-        if (!n8nRes.ok) {
-          const n8nErr = await n8nRes.text();
-          console.error(`n8n webhook failed: ${n8nRes.status} - ${n8nErr}`);
+      if (!n8nRes.ok) {
+        await supabase
+          .from("content_calendar")
+          .update({ status: "failed" })
+          .eq("id", post_id);
 
-          // Track webhook failure
-          if (n8nRes.status === 401) {
-            webhookStatus = "token_expired";
-            webhookError = "Social platform token expired. Post scheduled but auto-posting may not work.";
-          } else {
-            webhookStatus = "failed";
-            webhookError = `Webhook error: ${n8nRes.status}`;
-          }
-        } else {
-          webhookStatus = "success";
+        const n8nErr = await n8nRes.text();
+
+        if (n8nRes.status === 401) {
+          return new Response(
+            JSON.stringify({
+              error: "TOKEN_EXPIRED",
+              message: "Social platform token expired. Please re-link your account.",
+            }),
+            { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
         }
-      } catch (webhookErr) {
-        // Log webhook error but don't fail the request - post is already scheduled
-        console.error("Error calling n8n webhook:", webhookErr);
-        webhookStatus = "error";
-        webhookError = (webhookErr as Error).message;
+
+        throw new Error(`n8n webhook failed: ${n8nRes.status} - ${n8nErr}`);
       }
     }
 
@@ -158,8 +143,6 @@ Deno.serve(async (req: Request) => {
         message: N8N_WEBHOOK_URL
           ? "Post scheduled and webhook triggered."
           : "Post scheduled. Configure N8N_WEBHOOK_URL to enable auto-posting.",
-        webhook_status: webhookStatus,
-        webhook_error: webhookError,
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );

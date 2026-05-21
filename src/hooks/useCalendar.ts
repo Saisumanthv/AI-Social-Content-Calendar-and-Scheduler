@@ -1,11 +1,11 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   getCalendarPosts,
-  getPlatformConnections,
   updatePost,
   updatePostStatus,
   deleteCalendarPost,
   deleteCalendarForBrand,
+  getPlatformConnections,
   generateContentCalendar,
   triggerWebhook,
 } from '../lib/api';
@@ -15,14 +15,6 @@ export function useCalendarPosts(brandId: string | undefined) {
   return useQuery({
     queryKey: ['calendar', brandId],
     queryFn: () => getCalendarPosts(brandId!),
-    enabled: !!brandId,
-  });
-}
-
-export function usePlatformConnections(brandId: string | undefined) {
-  return useQuery({
-    queryKey: ['platform-connections', brandId],
-    queryFn: () => getPlatformConnections(brandId!),
     enabled: !!brandId,
   });
 }
@@ -92,5 +84,13 @@ export function useClearCalendar(brandId: string | undefined) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['calendar', brandId] });
     },
+  });
+}
+
+export function usePlatformConnections(brandId: string | undefined) {
+  return useQuery({
+    queryKey: ['connections', brandId],
+    queryFn: () => getPlatformConnections(brandId!),
+    enabled: !!brandId,
   });
 }

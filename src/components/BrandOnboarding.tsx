@@ -1,11 +1,19 @@
 import { useState, KeyboardEvent } from 'react';
-import { Building2, Users, Mic2, LayoutGrid, Globe, Check, X, ArrowLeft } from 'lucide-react';
+import { Building2, Users, Mic2, LayoutGrid, Globe, ChevronRight, ChevronLeft, Check, X } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useUpsertBrandProfile } from '../hooks/useBrandProfile';
 import { Button } from './ui/Button';
 import { Input, Textarea } from './ui/Input';
 import { TagBadge } from './ui/Badge';
+import { TIMEZONES } from '../lib/timezones';
 import type { BrandProfile } from '../types/database';
+
+const STEPS = [
+  { id: 1, title: 'Brand Identity', desc: 'Tell us about your brand', icon: Building2 },
+  { id: 2, title: 'Voice & Tone', desc: 'How does your brand speak?', icon: Mic2 },
+  { id: 3, title: 'Content Pillars', desc: 'Core content themes', icon: LayoutGrid },
+  { id: 4, title: 'Audience & Zone', desc: 'Who you are reaching', icon: Users },
+];
 
 const TONE_OPTIONS = [
   'Professional & Authoritative',
@@ -27,12 +35,13 @@ export function BrandOnboarding({ existingProfile, onComplete }: Props) {
   const { user } = useAuth();
   const upsert = useUpsertBrandProfile();
 
+  const [step, setStep] = useState(1);
   const [brandName, setBrandName] = useState(existingProfile?.brand_name ?? '');
   const [brandTone, setBrandTone] = useState(existingProfile?.brand_tone ?? '');
   const [pillars, setPillars] = useState<string[]>(existingProfile?.content_pillars ?? []);
   const [pillarInput, setPillarInput] = useState('');
   const [targetAudience, setTargetAudience] = useState(existingProfile?.target_audience ?? '');
-  const timezone = 'Asia/Kolkata'; // Hardcoded to IST for India-only app
+  const [timezone, setTimezone] = useState(existingProfile?.timezone ?? 'UTC');
   const [error, setError] = useState('');
 
   const isEdit = !!existingProfile;
@@ -52,17 +61,22 @@ export function BrandOnboarding({ existingProfile, onComplete }: Props) {
     setPillars(p => p.filter(x => x !== pillar));
   }
 
-  function validate(): boolean {
-    if (!brandName.trim()) { setError('Brand name is required'); return false; }
-    if (!brandTone.trim()) { setError('Please select or enter a brand tone'); return false; }
-    if (pillars.length < 2) { setError('Add at least 2 content pillars'); return false; }
-    if (!targetAudience.trim()) { setError('Target audience is required'); return false; }
+  function validateStep(): boolean {
+    if (step === 1 && !brandName.trim()) { setError('Brand name is required'); return false; }
+    if (step === 2 && !brandTone.trim()) { setError('Please select or enter a brand tone'); return false; }
+    if (step === 3 && pillars.length < 2) { setError('Add at least 2 content pillars'); return false; }
+    if (step === 4 && !targetAudience.trim()) { setError('Target audience is required'); return false; }
     setError('');
     return true;
   }
 
-  async function handleSave() {
-    if (!validate()) return;
+  function nextStep() {
+    if (!validateStep()) return;
+    if (step < 4) setStep(s => s + 1);
+  }
+
+  async function handleFinish() {
+    if (!validateStep()) return;
     try {
       await upsert.mutateAsync({
         user_id: user!.id,
@@ -78,58 +92,82 @@ export function BrandOnboarding({ existingProfile, onComplete }: Props) {
     }
   }
 
+  const progress = ((step - 1) / (STEPS.length - 1)) * 100;
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary-50 via-background to-accent-50 flex items-center justify-center p-4">
-      <div className="w-full max-w-2xl">
+      <div className="w-full max-w-lg">
         {/* Header */}
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <h1 className="text-2xl font-bold text-foreground">
-              {isEdit ? 'Brand Settings' : 'Set Up Your Brand'}
-            </h1>
-            <p className="text-muted-foreground text-sm mt-1">
-              {isEdit ? 'Update your brand profile settings below' : 'This helps AI generate content that matches your brand perfectly'}
-            </p>
+        <div className="text-center mb-8">
+          <div className="inline-flex items-center justify-center w-14 h-14 bg-primary-600 rounded-2xl text-white mb-4 shadow-lg">
+            <Building2 size={28} />
           </div>
-          <button
-            onClick={onComplete}
-            className="text-muted-foreground hover:text-foreground transition-colors"
-            aria-label="Back to dashboard"
-          >
-            <ArrowLeft size={24} />
-          </button>
+          <h1 className="text-2xl font-bold text-foreground">
+            {isEdit ? 'Update Brand Profile' : 'Set Up Your Brand'}
+          </h1>
+          <p className="text-muted-foreground text-sm mt-1">
+            {isEdit ? 'Edit your brand settings below' : 'This helps AI generate content that matches your brand perfectly'}
+          </p>
         </div>
 
-        {/* Form Card */}
-        <div className="bg-card rounded-2xl border border-border shadow-sm p-8">
-          <div className="space-y-6 max-h-[calc(100vh-200px)] overflow-y-auto pr-4">
-            {/* Brand Name */}
-            <div>
-              <div className="flex items-center gap-2 mb-2">
-                <Building2 size={16} className="text-primary-600" />
-                <h3 className="text-sm font-semibold text-foreground">Brand Identity</h3>
+        {/* Step indicators */}
+        <div className="flex items-center justify-between mb-8 relative">
+          <div className="absolute top-4 left-0 right-0 h-0.5 bg-border">
+            <div
+              className="h-full bg-primary-600 transition-all duration-500"
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+          {STEPS.map(s => {
+            const Icon = s.icon;
+            const done = step > s.id;
+            const active = step === s.id;
+            return (
+              <div key={s.id} className="relative flex flex-col items-center gap-2">
+                <div className={`
+                  w-8 h-8 rounded-full flex items-center justify-center transition-all duration-300 z-10
+                  ${done ? 'bg-primary-600 text-white' : active ? 'bg-primary-600 text-white shadow-lg shadow-primary-200' : 'bg-white border-2 border-border text-muted-foreground'}
+                `}>
+                  {done ? <Check size={14} /> : <Icon size={14} />}
+                </div>
+                <span className={`text-xs font-medium hidden sm:block ${active ? 'text-primary-600' : 'text-muted-foreground'}`}>
+                  {s.title}
+                </span>
               </div>
+            );
+          })}
+        </div>
+
+        {/* Card */}
+        <div className="bg-card rounded-2xl border border-border shadow-sm p-8">
+          <div className="mb-6">
+            <h2 className="text-lg font-semibold text-foreground">{STEPS[step - 1].title}</h2>
+            <p className="text-sm text-muted-foreground mt-0.5">{STEPS[step - 1].desc}</p>
+          </div>
+
+          {/* Step 1: Brand Name */}
+          {step === 1 && (
+            <div className="space-y-4 animate-fade-in">
               <Input
                 label="Brand Name"
                 placeholder="e.g. Acme Coffee Roasters"
                 value={brandName}
                 onChange={e => setBrandName(e.target.value)}
+                autoFocus
               />
-              <p className="text-xs text-muted-foreground mt-2">
-                The AI uses your brand name throughout captions and hooks to maintain consistent brand identity.
-              </p>
-            </div>
-
-            {/* Divider */}
-            <div className="border-t border-border" />
-
-            {/* Tone */}
-            <div>
-              <div className="flex items-center gap-2 mb-3">
-                <Mic2 size={16} className="text-primary-600" />
-                <h3 className="text-sm font-semibold text-foreground">Voice & Tone</h3>
+              <div className="bg-primary-50 rounded-lg p-4 border border-primary-100">
+                <p className="text-sm text-primary-700 font-medium mb-1">Why this matters</p>
+                <p className="text-xs text-primary-600">
+                  The AI uses your brand name throughout captions and hooks to maintain consistent brand identity.
+                </p>
               </div>
-              <div className="grid grid-cols-2 gap-2 mb-4">
+            </div>
+          )}
+
+          {/* Step 2: Tone */}
+          {step === 2 && (
+            <div className="space-y-4 animate-fade-in">
+              <div className="grid grid-cols-2 gap-2">
                 {TONE_OPTIONS.map(tone => (
                   <button
                     key={tone}
@@ -154,17 +192,12 @@ export function BrandOnboarding({ existingProfile, onComplete }: Props) {
                 hint="Custom tone overrides the selection above"
               />
             </div>
+          )}
 
-            {/* Divider */}
-            <div className="border-t border-border" />
-
-            {/* Content Pillars */}
-            <div>
-              <div className="flex items-center gap-2 mb-3">
-                <LayoutGrid size={16} className="text-primary-600" />
-                <h3 className="text-sm font-semibold text-foreground">Content Pillars</h3>
-              </div>
-              <div className="flex gap-2 mb-3">
+          {/* Step 3: Content Pillars */}
+          {step === 3 && (
+            <div className="space-y-4 animate-fade-in">
+              <div className="flex gap-2">
                 <Input
                   placeholder="e.g. Product Education, Behind the Scenes"
                   value={pillarInput}
@@ -183,27 +216,24 @@ export function BrandOnboarding({ existingProfile, onComplete }: Props) {
               </div>
 
               {pillars.length > 0 && (
-                <div className="flex flex-wrap gap-2 p-3 bg-neutral-50 rounded-lg border border-border min-h-[60px] mb-3">
+                <div className="flex flex-wrap gap-2 p-3 bg-neutral-50 rounded-lg border border-border min-h-[60px]">
                   {pillars.map(p => (
                     <TagBadge key={p} onRemove={() => removePillar(p)}>{p}</TagBadge>
                   ))}
                 </div>
               )}
 
-              <p className="text-xs text-neutral-600">
-                Suggested: <strong>Education</strong>, <strong>Inspiration</strong>, <strong>Product Showcase</strong>, <strong>Behind the Scenes</strong>, <strong>User Stories</strong>, <strong>Industry News</strong>
-              </p>
-            </div>
-
-            {/* Divider */}
-            <div className="border-t border-border" />
-
-            {/* Audience & Timezone */}
-            <div>
-              <div className="flex items-center gap-2 mb-3">
-                <Users size={16} className="text-primary-600" />
-                <h3 className="text-sm font-semibold text-foreground">Audience & Timezone</h3>
+              <div className="bg-accent-50 rounded-lg p-3 border border-accent-100">
+                <p className="text-xs text-accent-700">
+                  Suggested pillars: <strong>Education</strong>, <strong>Inspiration</strong>, <strong>Product Showcase</strong>, <strong>Behind the Scenes</strong>, <strong>User Stories</strong>, <strong>Industry News</strong>
+                </p>
               </div>
+            </div>
+          )}
+
+          {/* Step 4: Audience & Timezone */}
+          {step === 4 && (
+            <div className="space-y-4 animate-fade-in">
               <Textarea
                 label="Target Audience"
                 placeholder="e.g. Small business owners aged 28-45 who care about sustainable sourcing and quality coffee"
@@ -211,41 +241,57 @@ export function BrandOnboarding({ existingProfile, onComplete }: Props) {
                 onChange={e => setTargetAudience(e.target.value)}
                 rows={3}
               />
-              <div className="mt-4 p-3 bg-primary-50 border border-primary-200 rounded-lg">
-                <p className="text-sm text-primary-700 font-medium flex items-center gap-2">
-                  <Globe size={14} />
-                  India Standard Time (IST)
-                </p>
-                <p className="text-xs text-primary-600 mt-1">All posts are scheduled in Indian Standard Time (UTC+5:30)</p>
+              <div className="space-y-1.5">
+                <label className="label">
+                  <Globe size={14} className="inline mr-1.5" />
+                  Timezone
+                </label>
+                <select
+                  value={timezone}
+                  onChange={e => setTimezone(e.target.value)}
+                  className="input"
+                >
+                  {TIMEZONES.map(tz => (
+                    <option key={tz.value} value={tz.value}>{tz.label}</option>
+                  ))}
+                </select>
+                <p className="text-xs text-muted-foreground">Used to schedule posts at the right local time</p>
               </div>
             </div>
-          </div>
+          )}
 
           {error && (
-            <div className="mt-6 flex items-center gap-2 text-sm text-error-600 bg-error-50 border border-error-200 rounded-md px-3 py-2 animate-fade-in">
+            <div className="mt-4 flex items-center gap-2 text-sm text-error-600 bg-error-50 border border-error-200 rounded-md px-3 py-2 animate-fade-in">
               <X size={14} />
               {error}
             </div>
           )}
 
-          {/* Action Buttons */}
-          <div className="flex justify-between gap-3 mt-8">
+          {/* Nav */}
+          <div className="flex justify-between mt-8">
             <Button
               variant="secondary"
-              onClick={onComplete}
-              icon={<ArrowLeft size={16} />}
+              onClick={() => { setError(''); setStep(s => s - 1); }}
+              disabled={step === 1}
+              icon={<ChevronLeft size={16} />}
             >
-              Back to Dashboard
+              Back
             </Button>
 
-            <Button
-              onClick={handleSave}
-              loading={upsert.isPending}
-              icon={<Check size={16} />}
-              variant="success"
-            >
-              {isEdit ? 'Save Changes' : 'Launch Dashboard'}
-            </Button>
+            {step < 4 ? (
+              <Button onClick={nextStep} icon={<ChevronRight size={16} />}>
+                Continue
+              </Button>
+            ) : (
+              <Button
+                onClick={handleFinish}
+                loading={upsert.isPending}
+                icon={<Check size={16} />}
+                variant="success"
+              >
+                {isEdit ? 'Save Changes' : 'Launch Dashboard'}
+              </Button>
+            )}
           </div>
         </div>
       </div>
