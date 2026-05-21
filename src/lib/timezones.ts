@@ -26,6 +26,8 @@ export const TIMEZONES = [
 
 export const PLATFORMS = [
   { value: 'instagram', label: 'Instagram' },
+  { value: 'facebook', label: 'Facebook' },
   { value: 'twitter', label: 'Twitter/X' },
   { value: 'linkedin', label: 'LinkedIn' },
+  { value: 'tiktok', label: 'TikTok' },
 ];

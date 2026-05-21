@@ -22,7 +22,6 @@ export interface ContentCalendarPost {
   image_prompt: string;
   asset_url: string | null;
   status: PostStatus;
-  last_error: string | null;
   platform: string;
   scheduled_time: string;
   created_at: string;
@@ -36,9 +35,6 @@ export interface PlatformConnection {
   encrypted_token: string;
   account_id: string;
   account_name: string;
-  scopes: string[] | null;
-  status: string;
-  needs_reauth: boolean;
   expires_at: string | null;
   created_at: string;
   updated_at: string;
@@ -62,11 +58,7 @@ export interface GenerateContentPayload {
   target_audience: string;
   timezone: string;
   start_date: string;
-  scheduled_time: string;
-  idea: string;
-  platforms: string[];
-  count?: number;
-  asset_url: string;
+  platform: string;
 }
 
 export interface TriggerWebhookPayload {

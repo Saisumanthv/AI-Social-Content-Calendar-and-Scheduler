@@ -10,9 +10,6 @@ interface Props {
   posts: ContentCalendarPost[];
   loading: boolean;
   onEditPost: (post: ContentCalendarPost) => void;
-  onDeletePost: (post: ContentCalendarPost) => void;
-  onMoveToDrafts: (post: ContentCalendarPost) => void;
-  onPostScheduled?: (post: ContentCalendarPost) => void;
   onTokenError: () => void;
 }
 
@@ -24,18 +21,10 @@ function getFirstDayOfMonth(year: number, month: number): number {
   return new Date(year, month, 1).getDay();
 }
 
-export function CalendarGrid({ posts, loading, onEditPost, onDeletePost, onMoveToDrafts, onPostScheduled, onTokenError }: Props) {
+export function CalendarGrid({ posts, loading, onEditPost, onTokenError }: Props) {
   const today = new Date();
   const [currentYear, setCurrentYear] = useState(today.getFullYear());
   const [currentMonth, setCurrentMonth] = useState(today.getMonth());
-
-  // compute monthly scheduled/published count for current month
-  const monthlyScheduledCount = posts.filter(p => {
-    const d = new Date(p.post_date);
-    return d.getFullYear() === currentYear && d.getMonth() === currentMonth && (p.status === 'scheduled' || p.status === 'published');
-  }).length;
-  const MONTHLY_LIMIT = 30;
-  const remainingMonthlySlots = Math.max(0, MONTHLY_LIMIT - monthlyScheduledCount);
 
   const daysInMonth = getDaysInMonth(currentYear, currentMonth);
   const firstDay = getFirstDayOfMonth(currentYear, currentMonth);
@@ -67,30 +56,12 @@ export function CalendarGrid({ posts, loading, onEditPost, onDeletePost, onMoveT
     month: 'long', year: 'numeric',
   });
 
-  // Build weeks array: each element is an array of day numbers for that week
-  const weeks: (number | null)[][] = [];
-  let currentWeek: (number | null)[] = Array(firstDay).fill(null);
-  for (let day = 1; day <= daysInMonth; day++) {
-    currentWeek.push(day);
-    if (currentWeek.length === 7) {
-      weeks.push(currentWeek);
-      currentWeek = [];
-    }
-  }
-  if (currentWeek.length > 0) {
-    while (currentWeek.length < 7) currentWeek.push(null);
-    weeks.push(currentWeek);
-  }
-
-  // Restructure: for each day of week (0-6), collect all dates from all weeks
-  const dayOfWeekRows = DAYS.map((_, dayOfWeek) => {
-    return weeks.map(week => week[dayOfWeek] ?? null);
-  });
+  const totalCells = Math.ceil((firstDay + daysInMonth) / 7) * 7;
 
   return (
     <div>
       {/* Month navigation */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-4">
         <button onClick={prevMonth} className="p-1.5 rounded-md hover:bg-neutral-100 transition-colors text-neutral-600">
           <ChevronLeft size={18} />
         </button>
@@ -100,68 +71,59 @@ export function CalendarGrid({ posts, loading, onEditPost, onDeletePost, onMoveT
         </button>
       </div>
 
-      {/* Day-of-week oriented calendar */}
-      <div className="space-y-3">
-        {dayOfWeekRows.map((dateCells, dayOfWeek) => (
-          <div key={dayOfWeek} className="flex items-stretch gap-3">
-            {/* Day label */}
-            <div className="w-16 flex items-center">
-              <span className="text-sm font-semibold text-foreground">{DAYS[dayOfWeek]}</span>
-            </div>
-
-            {/* Date cells for this day of week */}
-            <div className="flex gap-3 flex-1">
-              {dateCells.map((dayNum, weekIdx) => {
-                const isValid = dayNum !== null;
-                const isToday =
-                  isValid &&
-                  dayNum === today.getDate() &&
-                  currentMonth === today.getMonth() &&
-                  currentYear === today.getFullYear();
-                const dayPosts = isValid && dayNum ? (postsByDay.get(dayNum.toString()) ?? []) : [];
-
-                return (
-                  <div
-                    key={`${dayOfWeek}-${weekIdx}`}
-                    className={`flex-1 rounded-lg border p-3 ${isValid ? 'bg-white border-border' : 'bg-neutral-50 border-transparent opacity-40'}`}
-                  >
-                    {isValid && dayNum && (
-                      <>
-                        <div className={`
-                          w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold mb-2.5 transition-colors mx-auto
-                          ${isToday ? 'bg-primary-600 text-white' : 'text-muted-foreground hover:bg-neutral-100'}
-                        `}>
-                          {dayNum}
-                        </div>
-                        <div className="space-y-2 max-h-[350px] overflow-y-auto">
-                          {loading && dayOfWeek === 0 && weekIdx === 0 ? (
-                            <PostCardSkeleton />
-                          ) : dayPosts.length > 0 ? (
-                            dayPosts.map(post => (
-                              <PostCard
-                                key={post.id}
-                                post={post}
-                                onEdit={onEditPost}
-                                onDelete={onDeletePost}
-                                onMoveToDrafts={onMoveToDrafts}
-                                onPostScheduled={onPostScheduled}
-                                onTokenError={onTokenError}
-                                onOpen={onEditPost}
-                                remainingMonthlySlots={remainingMonthlySlots}
-                              />
-                            ))
-                          ) : (
-                            <p className="text-xs text-muted-foreground text-center py-1">—</p>
-                          )}
-                        </div>
-                      </>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
+      {/* Day headers */}
+      <div className="grid grid-cols-7 mb-1">
+        {DAYS.map(d => (
+          <div key={d} className="text-center text-xs font-medium text-muted-foreground py-2">
+            {d}
           </div>
         ))}
+      </div>
+
+      {/* Calendar cells */}
+      <div className="grid grid-cols-7 gap-px bg-border rounded-xl overflow-hidden border border-border">
+        {Array.from({ length: totalCells }).map((_, idx) => {
+          const dayNum = idx - firstDay + 1;
+          const isValid = dayNum >= 1 && dayNum <= daysInMonth;
+          const isToday =
+            isValid &&
+            dayNum === today.getDate() &&
+            currentMonth === today.getMonth() &&
+            currentYear === today.getFullYear();
+          const dayPosts = isValid ? (postsByDay.get(dayNum.toString()) ?? []) : [];
+
+          return (
+            <div
+              key={idx}
+              className={`bg-white min-h-[120px] p-2 ${isValid ? '' : 'bg-neutral-50 opacity-40'}`}
+            >
+              {isValid && (
+                <>
+                  <div className={`
+                    w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium mb-1.5 transition-colors
+                    ${isToday ? 'bg-primary-600 text-white' : 'text-muted-foreground hover:bg-neutral-100'}
+                  `}>
+                    {dayNum}
+                  </div>
+                  <div className="space-y-1.5">
+                    {loading && idx < 7 ? (
+                      <PostCardSkeleton />
+                    ) : (
+                      dayPosts.map(post => (
+                        <PostCard
+                          key={post.id}
+                          post={post}
+                          onEdit={onEditPost}
+                          onTokenError={onTokenError}
+                        />
+                      ))
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );

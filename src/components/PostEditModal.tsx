@@ -5,21 +5,17 @@ import { Button } from './ui/Button';
 import { Input, Textarea } from './ui/Input';
 import { TagBadge } from './ui/Badge';
 import { supabase } from '../lib/supabase';
-import { useTriggerWebhook, useUpdatePost, useUpdatePostStatus } from '../hooks/useCalendar';
+import { useUpdatePost } from '../hooks/useCalendar';
 import type { ContentCalendarPost } from '../types/database';
 
 interface Props {
   post: ContentCalendarPost | null;
   brandId: string;
   onClose: () => void;
-  onDelete?: (post: ContentCalendarPost) => void;
-  onMoveToDrafts?: (post: ContentCalendarPost) => void;
 }
 
-export function PostEditModal({ post, brandId, onClose, onDelete, onMoveToDrafts }: Props) {
+export function PostEditModal({ post, brandId, onClose }: Props) {
   const updatePost = useUpdatePost(brandId);
-  const triggerWebhook = useTriggerWebhook(brandId);
-  const updateStatus = useUpdatePostStatus(brandId);
   const [hook, setHook] = useState('');
   const [caption, setCaption] = useState('');
   const [hashtagInput, setHashtagInput] = useState('');
@@ -91,44 +87,6 @@ export function PostEditModal({ post, brandId, onClose, onDelete, onMoveToDrafts
     }
   }
 
-  async function handleSaveAndSchedule() {
-    if (!post) return;
-    setError('');
-
-    try {
-      await updatePost.mutateAsync({
-        postId: post.id,
-        updates: {
-          hook,
-          caption,
-          hashtags,
-          image_prompt: imagePrompt,
-          scheduled_time: `${scheduledTime}:00`,
-          asset_url: assetUrl,
-        },
-      });
-
-      if (!assetUrl) {
-        throw new Error('Upload media before scheduling this post.');
-      }
-
-      await triggerWebhook.mutateAsync({
-        post_id: post.id,
-        brand_id: post.brand_id,
-        caption,
-        hashtags,
-        asset_url: assetUrl,
-        platform: post.platform,
-        scheduled_utc: post.post_date,
-        hook,
-      });
-
-      onClose();
-    } catch (err) {
-      setError((err as Error).message);
-    }
-  }
-
   const formattedDate = post
     ? new Date(post.post_date).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
     : '';
@@ -136,15 +94,6 @@ export function PostEditModal({ post, brandId, onClose, onDelete, onMoveToDrafts
   return (
     <Modal open={!!post} onClose={onClose} title={`Edit Post — ${formattedDate}`} maxWidth="xl">
       <div className="space-y-5">
-        {post?.status === 'failed' && (
-          <div className="rounded-lg border border-error-200 bg-error-50 px-4 py-3 text-sm text-error-700">
-            <p className="font-semibold text-error-800">Failed reason</p>
-            <p className="mt-1 whitespace-pre-wrap">
-              {post.last_error || 'This post was marked failed because the publishing job did not complete before the scheduled time.'}
-            </p>
-          </div>
-        )}
-
         {/* Media */}
         <div>
           <label className="label"><Image size={14} className="inline mr-1.5" />Media Asset</label>
@@ -214,48 +163,18 @@ export function PostEditModal({ post, brandId, onClose, onDelete, onMoveToDrafts
         </div>
 
         <Input
-          label="Scheduled Time (IST)"
+          label="Scheduled Time (local)"
           type="time"
           value={scheduledTime}
           onChange={e => setScheduledTime(e.target.value)}
-          hint="Time in India Standard Time (UTC+5:30)"
+          hint="Time will be converted to UTC based on your brand timezone"
         />
-
-        <p className="text-xs text-muted-foreground">
-          Upload media, then use <strong>Save & Schedule</strong> to move this post from Draft to Scheduled.
-        </p>
 
         {error && (
           <p className="text-sm text-error-600 bg-error-50 border border-error-200 rounded-md px-3 py-2">{error}</p>
         )}
 
         <div className="flex justify-end gap-3 pt-2">
-          {post?.status === 'scheduled' && (
-            <Button
-              variant="secondary"
-              onClick={async () => {
-                await updateStatus.mutateAsync({ postId: post.id, status: 'draft' });
-                onMoveToDrafts?.(post);
-                onClose();
-              }}
-              loading={updateStatus.isPending}
-            >
-              Move to Drafts
-            </Button>
-          )}
-          {post && onDelete && (
-            <Button
-              variant="danger"
-              onClick={() => {
-                if (window.confirm('Delete this post? This cannot be undone.')) {
-                  onDelete(post);
-                  onClose();
-                }
-              }}
-            >
-              Delete Post
-            </Button>
-          )}
           <Button variant="secondary" onClick={onClose}>Cancel</Button>
           <Button
             onClick={handleSave}
@@ -263,15 +182,6 @@ export function PostEditModal({ post, brandId, onClose, onDelete, onMoveToDrafts
             icon={<Save size={15} />}
           >
             Save Changes
-          </Button>
-          <Button
-            variant="success"
-            onClick={handleSaveAndSchedule}
-            loading={triggerWebhook.isPending}
-            icon={<Save size={15} />}
-            disabled={!assetUrl}
-          >
-            Save & Schedule
           </Button>
         </div>
       </div>
