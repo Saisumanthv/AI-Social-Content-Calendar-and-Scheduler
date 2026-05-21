@@ -1,7 +1,6 @@
-import { Pencil as Edit2, CheckCircle2, AlertCircle, ImageOff, Trash2 } from 'lucide-react';
+import { Pencil as Edit2, CheckCircle2, ImageOff, Trash2 } from 'lucide-react';
 import { StatusBadge } from './ui/Badge';
 import { Button } from './ui/Button';
-import { Tooltip } from './ui/Tooltip';
 import { useTriggerWebhook, useUpdatePostStatus } from '../hooks/useCalendar';
 import type { ContentCalendarPost } from '../types/database';
 
@@ -24,7 +23,6 @@ export function PostCard({ post, onEdit, onDelete, onMoveToDrafts, onPostSchedul
   const canMoveToDraft = post.status === 'scheduled';
   const hasMedia = !!post.asset_url;
   async function handleApprove() {
-    if (!hasMedia) return;
     if (typeof remainingMonthlySlots === 'number' && remainingMonthlySlots <= 0) {
       window.alert('Monthly scheduling limit reached (30). Remove or unschedule posts to free slots.');
       return;
@@ -35,7 +33,7 @@ export function PostCard({ post, onEdit, onDelete, onMoveToDrafts, onPostSchedul
         brand_id: post.brand_id,
         caption: post.caption,
         hashtags: post.hashtags,
-        asset_url: post.asset_url!,
+        asset_url: post.asset_url,
         platform: post.platform,
         scheduled_utc: post.post_date,
         hook: post.hook,
@@ -109,32 +107,16 @@ export function PostCard({ post, onEdit, onDelete, onMoveToDrafts, onPostSchedul
         </button>
 
         {canSchedule && (
-          hasMedia ? (
-            <Button
-              size="sm"
-              variant="success"
-              loading={isPending}
-              onClick={(e) => { e.stopPropagation(); handleApprove(); }}
-              className="flex-1 text-xs py-1"
-              icon={<CheckCircle2 size={12} />}
-            >
-              Schedule
-            </Button>
-          ) : (
-            <Tooltip content="Upload media before approving">
-              <span className="flex-1">
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  disabled
-                  className="w-full text-xs py-1 cursor-not-allowed"
-                  icon={<AlertCircle size={12} />}
-                >
-                  Media Required
-                </Button>
-              </span>
-            </Tooltip>
-          )
+          <Button
+            size="sm"
+            variant="success"
+            loading={isPending}
+            onClick={(e) => { e.stopPropagation(); handleApprove(); }}
+            className="flex-1 text-xs py-1"
+            icon={<CheckCircle2 size={12} />}
+          >
+            Schedule
+          </Button>
         )}
 
           {canMoveToDraft && (

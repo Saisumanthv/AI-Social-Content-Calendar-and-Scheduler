@@ -1,0 +1,121 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>OAuth Complete</title>
+    <style>
+      body { 
+        font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, sans-serif; 
+        background: linear-gradient(135deg, #f0f9ff 0%, #f8fafc 100%); 
+        color: #0f172a; 
+        display: flex; 
+        align-items: center; 
+        justify-content: center; 
+        min-height: 100vh; 
+        margin: 0 
+      }
+      .card { 
+        background: white; 
+        padding: 32px 28px; 
+        border-radius: 16px; 
+        box-shadow: 0 16px 50px rgba(15, 23, 42, 0.12); 
+        max-width: 520px; 
+        width: calc(100% - 32px); 
+        text-align: center 
+      }
+      .icon { 
+        display: flex; 
+        align-items: center; 
+        justify-content: center; 
+        width: 64px; 
+        height: 64px; 
+        margin: 0 auto 16px; 
+        background: #d1fae5; 
+        border-radius: 50%; 
+        font-size: 32px 
+      }
+      h1 { 
+        margin: 0 0 8px; 
+        font-size: 22px; 
+        font-weight: 600; 
+        color: #065f46 
+      }
+      .message { 
+        margin: 0 0 16px; 
+        color: #374151; 
+        font-size: 14px; 
+        line-height: 1.5 
+      }
+      .btn { 
+        display: inline-block; 
+        padding: 10px 20px; 
+        background: #3b82f6; 
+        color: white; 
+        border: none; 
+        border-radius: 8px; 
+        font-size: 14px; 
+        font-weight: 500; 
+        cursor: pointer; 
+        transition: background 0.2s 
+      }
+      .btn:hover { background: #2563eb }
+      .status { 
+        margin-top: 12px; 
+        font-size: 12px; 
+        color: #6b7280 
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <div class="icon">✓</div>
+      <h1 id="title">Connection Successful</h1>
+      <p class="message" id="message">Your account has been connected. You can close this window.</p>
+      <button class="btn" onclick="window.close()">Close Window</button>
+      <div class="status">If the window doesn't close, click the button above.</div>
+    </div>
+    <script>
+      (function(){
+        function qs(k){ const p=new URLSearchParams(location.search); return p.get(k); }
+        const platform = qs('platform');
+        const status = qs('status');
+        const message = qs('message');
+        
+        // Update UI based on status
+        const titleEl = document.getElementById('title');
+        const messageEl = document.getElementById('message');
+        const icon = document.querySelector('.icon');
+        
+        if (status === 'error') {
+          titleEl.textContent = 'Connection Failed';
+          messageEl.textContent = message || 'An error occurred during connection.';
+          icon.textContent = '✕';
+          icon.style.background = '#fee2e2';
+          titleEl.style.color = '#7f1d1d';
+        } else {
+          titleEl.textContent = 'Connected';
+          messageEl.textContent = message || 'Your account has been connected successfully.';
+        }
+        
+        // Send message to opener
+        const data = { type: 'oauth-complete', platform, status, message };
+        try {
+          if (window.opener && typeof window.opener.postMessage === 'function') {
+            window.opener.postMessage(data, '*');
+          }
+        } catch (e){}
+        
+        // Try to auto-close after a short delay; if blocked, fallback to about:blank first.
+        setTimeout(()=>{
+          try {
+            window.open('', '_self');
+            window.close();
+          } catch (e) {
+            try { window.location.href = 'about:blank'; window.close(); } catch (innerError) {}
+          }
+        }, 250);
+      })();
+    </script>
+  </body>
+</html>

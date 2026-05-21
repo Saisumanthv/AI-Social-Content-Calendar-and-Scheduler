@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import type { Session, User } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
+import { upsertBrandProfile } from '../lib/api';
 
 interface AuthContextValue {
   session: Session | null;
@@ -29,6 +30,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     return () => subscription.unsubscribe();
   }, []);
+
+  // Ensure a minimal brand profile exists for authenticated users.
+  useEffect(() => {
+    async function ensureProfile() {
+      const user = session?.user;
+      if (!user) return;
+
+      try {
+        await upsertBrandProfile({ user_id: user.id });
+      } catch (err) {
+        // Non-fatal: log and continue
+        // eslint-disable-next-line no-console
+        console.error('Failed to upsert brand profile:', err);
+      }
+    }
+
+    ensureProfile();
+  }, [session]);
 
   async function signIn(email: string, password: string) {
     const { error } = await supabase.auth.signInWithPassword({ email, password });

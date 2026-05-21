@@ -4,7 +4,6 @@ import { Settings, LogOut, CalendarDays, AlertCircle, CheckCircle2, X, RefreshCw
 import { useAuth } from '../contexts/AuthContext';
 import { useBrandProfile } from '../hooks/useBrandProfile';
 import { useCalendarPosts, useDeletePost } from '../hooks/useCalendar';
-import { failOverdueScheduledPosts, triggerPostStatusTransitions } from '../lib/api';
 import { CalendarGrid } from './CalendarGrid';
 import { QueueView } from './QueueView';
 import { ConnectionsPanel } from './ConnectionsPanel';
@@ -42,34 +41,17 @@ export function Dashboard() {
     window.setTimeout(() => setNotice(null), 2500);
   }
 
-  // Check and transition due scheduled posts to published/failed, then refresh calendar.
+  // Poll calendar data only. Publishing transitions should happen server-side via scheduler.
   useEffect(() => {
-    const checkPostTransitions = async () => {
+    const refreshCalendar = async () => {
       if (!brand?.id) return;
-      let changedCount = 0;
-
-      try {
-        const result = await triggerPostStatusTransitions();
-        changedCount += result.processed ?? 0;
-      } catch (err) {
-        console.error('Failed to transition posts:', err);
-      }
-
-      // Always run fallback even when edge transition fails.
-      try {
-        const fallback = await failOverdueScheduledPosts(brand.id);
-        changedCount += fallback.updated ?? 0;
-      } catch (err) {
-        console.error('Failed to apply overdue fallback:', err);
-      }
-
-      if (changedCount > 0) {
-        queryClient.invalidateQueries({ queryKey: ['calendar', brand.id] });
-      }
+      await queryClient.invalidateQueries({ queryKey: ['calendar', brand.id] });
     };
 
-    checkPostTransitions();
-    const intervalId = window.setInterval(checkPostTransitions, 60_000);
+    void refreshCalendar();
+    const intervalId = window.setInterval(() => {
+      void refreshCalendar();
+    }, 60_000);
     return () => window.clearInterval(intervalId);
   }, [brand?.id, queryClient]);
 

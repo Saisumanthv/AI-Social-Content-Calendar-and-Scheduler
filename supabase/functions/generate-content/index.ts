@@ -19,7 +19,7 @@ interface GenerateContentPayload {
   idea: string;
   platforms: string[];
   count?: number;
-  asset_url: string;
+  asset_url: string | null;
 }
 
 interface GeneratedPost {
@@ -58,7 +58,7 @@ Each object must have these exact fields:
 - "image_prompt": string (brief AI image prompt, 15-25 words)
 - "platform": string (one of: ${platformsStr})
 
-Use the uploaded image at ${payload.asset_url} as the associated media reference.
+${payload.asset_url ? `Use the uploaded image at ${payload.asset_url} as the associated media reference.` : 'No image is attached. Generate text-only posts.'}
 
 Create ${count} post(s) per selected platform. Make each post reflect the user idea: ${payload.idea}. Tailor the tone, hook, format, and caption to each platform while keeping the selected date and brand consistent.`;
 }
@@ -229,9 +229,9 @@ Deno.serve(async (req: Request) => {
     const payload: GenerateContentPayload = await req.json();
     const { brand_id, start_date, platforms, idea, asset_url } = payload;
 
-    if (!brand_id || !start_date || !idea?.trim() || !platforms?.length || !asset_url) {
+    if (!brand_id || !start_date || !idea?.trim() || !platforms?.length) {
       return new Response(
-        JSON.stringify({ error: "Missing required fields: brand_id, start_date, idea, platforms, asset_url" }),
+        JSON.stringify({ error: "Missing required fields: brand_id, start_date, idea, platforms" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -286,7 +286,7 @@ Deno.serve(async (req: Request) => {
       image_prompt: p.image_prompt,
       platform: p.platform,
       status: "scheduled" as const,
-      asset_url,
+      asset_url: asset_url || null,
       scheduled_time: scheduledTime,
     }));
 

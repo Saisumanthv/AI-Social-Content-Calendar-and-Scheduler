@@ -52,6 +52,30 @@ export function ConnectionsPanel({ brand, onMessage }: Props) {
       if (event.data?.platform !== 'linkedin') return;
 
       setConnectingPlatform(null);
+      const closePopup = (popupWindow?: Window | null) => {
+        if (!popupWindow) return;
+        try {
+          popupWindow.close();
+        } catch (e) {
+          try {
+            popupWindow.location.href = 'about:blank';
+            popupWindow.close();
+          } catch (innerError) {
+            // ignore
+          }
+        }
+      };
+
+      closePopup(event.source as Window | null);
+
+      try {
+        const winAny = window as any;
+        closePopup(winAny._oauthPopup as Window | null);
+        winAny._oauthPopup = null;
+      } catch (e) {
+        // ignore
+      }
+
       void refetch();
 
       if (event.data?.status === 'connected') {
@@ -72,14 +96,20 @@ export function ConnectionsPanel({ brand, onMessage }: Props) {
       return;
     }
 
+    // keep a global reference so we can close it from the main window if needed
+    try {
+      (window as any)._oauthPopup = popup;
+    } catch (e) {}
+
     const popupWatcher = window.setInterval(() => {
       if (popup.closed) {
         window.clearInterval(popupWatcher);
         setConnectingPlatform(null);
+        try { (window as any)._oauthPopup = null; } catch (e) {}
       }
     }, 500);
 
-    popup.focus();
+    try { popup.focus(); } catch (e) {}
   }
 
   async function handleConnect(platform: string) {
@@ -102,6 +132,10 @@ export function ConnectionsPanel({ brand, onMessage }: Props) {
     } catch (err) {
       onMessage((err as Error).message);
     }
+  }
+
+  function openLinkedInTab() {
+    window.open('https://www.linkedin.com/feed/', '_blank', 'noopener,noreferrer');
   }
 
   return (
@@ -136,10 +170,10 @@ export function ConnectionsPanel({ brand, onMessage }: Props) {
               className={`rounded-xl border p-4 transition-all ${connected ? 'border-success-200 bg-success-50/60' : 'border-border bg-background'}`}
             >
               <div className="flex items-start justify-between gap-3 mb-3">
-                <div>
+                {/* <div>
                   <p className="font-semibold text-foreground">{platform.name}</p>
                   <p className="text-xs text-muted-foreground mt-1">Required scopes: {platform.scopes}</p>
-                </div>
+                </div> */}
                 {connected ? (
                   <span className="inline-flex items-center gap-1 text-xs font-medium text-success-700 bg-success-100 px-2 py-1 rounded-full">
                     <CheckCircle2 size={12} /> Connected
@@ -168,7 +202,8 @@ export function ConnectionsPanel({ brand, onMessage }: Props) {
                     size="sm"
                     variant="ghost"
                     icon={<ExternalLink size={14} />}
-                    onClick={() => onMessage(`${platform.name} is connected to ${connection.account_name}.`)}
+                    onClick={() => openLinkedInTab()}
+                    aria-label="Open LinkedIn in a new tab"
                   />
                 ) : null}
               </div>

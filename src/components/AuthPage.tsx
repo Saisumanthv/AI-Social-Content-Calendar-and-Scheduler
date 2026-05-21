@@ -9,6 +9,7 @@ export function AuthPage() {
   const [mode, setMode] = useState<'signin' | 'signup'>('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [passwordConfirm, setPasswordConfirm] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
@@ -22,12 +23,31 @@ export function AuthPage() {
       if (mode === 'signin') {
         await signIn(email, password);
       } else {
+        // Client-side validation
+        if (password.length < 6) {
+          throw new Error('Password must be at least 6 characters');
+        }
+        if (password !== passwordConfirm) {
+          throw new Error('Password and confirmation do not match');
+        }
+
+        // Create account (Supabase will send verification email)
         await signUp(email, password);
-        setSuccessMsg('Account created! You can now sign in.');
+        setSuccessMsg('Account created — check your email to verify your account.');
         setMode('signin');
       }
     } catch (err) {
-      setError((err as Error).message);
+      // Log full error for debugging (network/CORS etc.)
+      // eslint-disable-next-line no-console
+      console.error('Signup error', err);
+      const maybeError = err as any;
+      const msg = maybeError?.message ?? (typeof maybeError === 'string' ? maybeError : JSON.stringify(maybeError));
+      // Provide a hint for common "Failed to fetch" issues
+      if (typeof msg === 'string' && msg.toLowerCase().includes('failed to fetch')) {
+        setError(msg + ' — check VITE_SUPABASE_URL, network, and CORS/redirect settings in Supabase.');
+      } else {
+        setError(msg);
+      }
     } finally {
       setLoading(false);
     }
@@ -113,6 +133,17 @@ export function AuthPage() {
               autoComplete={mode === 'signin' ? 'current-password' : 'new-password'}
               hint={mode === 'signup' ? 'At least 6 characters' : undefined}
             />
+            {mode === 'signup' && (
+              <Input
+                label="Confirm password"
+                type="password"
+                placeholder="Repeat your password"
+                value={passwordConfirm}
+                onChange={e => setPasswordConfirm(e.target.value)}
+                required
+                autoComplete="new-password"
+              />
+            )}
 
             {error && (
               <div className="bg-error-50 border border-error-200 rounded-md px-3 py-2.5 text-sm text-error-700 animate-fade-in">

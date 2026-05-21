@@ -66,7 +66,7 @@ export interface GenerateContentPayload {
   idea: string;
   platforms: string[];
   count?: number;
-  asset_url: string;
+  asset_url: string | null;
 }
 
 export interface TriggerWebhookPayload {
@@ -74,7 +74,7 @@ export interface TriggerWebhookPayload {
   brand_id: string;
   caption: string;
   hashtags: string[];
-  asset_url: string;
+  asset_url: string | null;
   platform: string;
   scheduled_utc: string;
   hook: string;

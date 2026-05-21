@@ -1,0 +1,30 @@
+# Publish Runner
+
+Small Node runner to publish scheduled LinkedIn posts from your Supabase database. Designed to run periodically (cron/GitHub Actions/hosted runner).
+
+Required environment variables:
+
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `TOKEN_ENCRYPTION_KEY` (base64, same key used by your Supabase functions)
+- `LINKEDIN_CLIENT_ID` (for token refresh)
+- `LINKEDIN_CLIENT_SECRET` (for token refresh)
+- `OAUTH_REDIRECT_URI`
+- `BATCH_SIZE` (optional, default 10)
+
+Run locally:
+
+```bash
+cd runners/publish-runner
+npm ci
+SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... TOKEN_ENCRYPTION_KEY=... node index.js
+```
+
+Docker:
+
+```bash
+docker build -t publish-runner:latest .
+docker run -e SUPABASE_URL=... -e SUPABASE_SERVICE_ROLE_KEY=... -e TOKEN_ENCRYPTION_KEY=... publish-runner:latest
+```
+
+GitHub Actions: you can use the included workflow to run every 5 minutes. Configure the necessary repository secrets.

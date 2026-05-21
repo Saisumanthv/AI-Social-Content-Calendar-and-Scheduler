@@ -5,7 +5,6 @@ import { useUpsertBrandProfile } from '../hooks/useBrandProfile';
 import { Button } from './ui/Button';
 import { Input, Textarea } from './ui/Input';
 import { TagBadge } from './ui/Badge';
-import { PLATFORMS } from '../lib/timezones';
 import type { BrandProfile } from '../types/database';
 
 const TONE_OPTIONS = [

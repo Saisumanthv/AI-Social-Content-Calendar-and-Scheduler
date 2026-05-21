@@ -108,10 +108,6 @@ export function PostEditModal({ post, brandId, onClose, onDelete, onMoveToDrafts
         },
       });
 
-      if (!assetUrl) {
-        throw new Error('Upload media before scheduling this post.');
-      }
-
       await triggerWebhook.mutateAsync({
         post_id: post.id,
         brand_id: post.brand_id,
@@ -222,7 +218,7 @@ export function PostEditModal({ post, brandId, onClose, onDelete, onMoveToDrafts
         />
 
         <p className="text-xs text-muted-foreground">
-          Upload media, then use <strong>Save & Schedule</strong> to move this post from Draft to Scheduled.
+          You can schedule text-only posts now. Upload media later if needed.
         </p>
 
         {error && (
@@ -269,7 +265,6 @@ export function PostEditModal({ post, brandId, onClose, onDelete, onMoveToDrafts
             onClick={handleSaveAndSchedule}
             loading={triggerWebhook.isPending}
             icon={<Save size={15} />}
-            disabled={!assetUrl}
           >
             Save & Schedule
           </Button>

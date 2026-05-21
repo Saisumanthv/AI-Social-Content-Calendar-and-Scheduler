@@ -81,11 +81,6 @@ export function GeneratePanel({ brand, hasExistingPosts }: Props) {
       return;
     }
 
-    if (!assetUrl) {
-      setError('Please upload an image before generating.');
-      return;
-    }
-
     const platformsToUse = getValidPlatforms(selectedPlatforms);
     if (platformsToUse.length === 0) {
       setError('Please select at least one platform.');
@@ -127,7 +122,7 @@ export function GeneratePanel({ brand, hasExistingPosts }: Props) {
         idea: idea.trim(),
         platforms: effectiveSelectedPlatforms,
         count,
-        asset_url: assetUrl,
+        asset_url: assetUrl || null,
       });
       setLastGeneratedTotal(totalSelectedPosts);
       setSuccess(true);
@@ -197,7 +192,7 @@ export function GeneratePanel({ brand, hasExistingPosts }: Props) {
               </div>
 
               <div className="space-y-1.5">
-                <label className="label">Image</label>
+                <label className="label">Image (optional)</label>
                 {assetUrl ? (
                   <div className="rounded-lg overflow-hidden border border-border">
                     <img src={assetUrl} alt="Selected upload" className="w-full h-40 object-cover" />
@@ -217,7 +212,7 @@ export function GeneratePanel({ brand, hasExistingPosts }: Props) {
                   <label className="flex flex-col items-center justify-center h-32 border-2 border-dashed border-border rounded-lg cursor-pointer hover:border-primary-400 hover:bg-primary-50 transition-colors group">
                     <Upload size={20} className="text-muted-foreground group-hover:text-primary-600 transition-colors mb-2" />
                     <span className="text-sm text-muted-foreground group-hover:text-primary-600 transition-colors">
-                      {uploading ? 'Uploading...' : 'Click to upload image'}
+                      {uploading ? 'Uploading...' : 'Click to upload image or skip for text-only posts'}
                     </span>
                     <input type="file" accept="image/*" onChange={handleImageUpload} className="hidden" disabled={uploading} />
                   </label>

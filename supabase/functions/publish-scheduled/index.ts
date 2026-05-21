@@ -1,8 +1,14 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
-// Simple scheduled publisher stub. Should be run on a schedule (cron) and will:
-// - find due posts with status='scheduled' and scheduled_time <= now
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, Apikey, X-Client-Info',
+};
+
+// Simple scheduled publisher. Run on a schedule (cron):
+// - find due posts with status='scheduled' and post_date <= now
 // - for each post, decrypt platform token, call platform API to publish, and update status
 
 interface PlatformTokenPayload {
@@ -47,6 +53,18 @@ async function encrypt(plaintext: string, keyB64: string) {
   return btoa(s);
 }
 
+// Add a timeout wrapper for fetch to avoid long-running network calls consuming worker resources.
+async function timeoutFetch(input: RequestInfo | URL, init?: RequestInit, timeout = 30000) {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeout);
+  try {
+    const mergedInit = { ...(init || {}), signal: controller.signal } as RequestInit;
+    return await fetch(input, mergedInit);
+  } finally {
+    clearTimeout(id);
+  }
+}
+
 async function refreshLinkedInToken(refreshToken: string): Promise<PlatformTokenPayload> {
   const clientId = Deno.env.get('LINKEDIN_CLIENT_ID')!;
   const clientSecret = Deno.env.get('LINKEDIN_CLIENT_SECRET')!;
@@ -60,10 +78,10 @@ async function refreshLinkedInToken(refreshToken: string): Promise<PlatformToken
     redirect_uri: redirectUri,
   });
 
-  const res = await fetch('https://www.linkedin.com/oauth/v2/accessToken', {
+  const res = await timeoutFetch('https://www.linkedin.com/oauth/v2/accessToken', {
     method: 'POST',
     body: params,
-  });
+  }, 15000);
 
   if (!res.ok) {
     throw new Error(`LinkedIn token refresh failed (${res.status})`);
@@ -97,7 +115,7 @@ async function uploadLinkedInImage(accessToken: string, ownerUrn: string, assetU
     },
   };
 
-  const registerRes = await fetch('https://api.linkedin.com/v2/assets?action=registerUpload', {
+  const registerRes = await timeoutFetch('https://api.linkedin.com/v2/assets?action=registerUpload', {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -105,7 +123,7 @@ async function uploadLinkedInImage(accessToken: string, ownerUrn: string, assetU
       'X-Restli-Protocol-Version': '2.0.0',
     },
     body: JSON.stringify(registerBody),
-  });
+  }, 20000);
 
   if (!registerRes.ok) {
     throw new Error(`LinkedIn registerUpload failed (${registerRes.status})`);
@@ -119,7 +137,7 @@ async function uploadLinkedInImage(accessToken: string, ownerUrn: string, assetU
     throw new Error('LinkedIn registerUpload response missing upload url or asset urn');
   }
 
-  const mediaRes = await fetch(assetUrl);
+  const mediaRes = await timeoutFetch(assetUrl, undefined, 20000);
   if (!mediaRes.ok) {
     throw new Error(`Failed to download post media (${mediaRes.status})`);
   }
@@ -127,13 +145,13 @@ async function uploadLinkedInImage(accessToken: string, ownerUrn: string, assetU
   const mediaBytes = await mediaRes.arrayBuffer();
   const contentType = mediaRes.headers.get('content-type') || 'application/octet-stream';
 
-  const uploadRes = await fetch(uploadUrl, {
+  const uploadRes = await timeoutFetch(uploadUrl, {
     method: 'PUT',
     headers: {
       'Content-Type': contentType,
     },
     body: mediaBytes,
-  });
+  }, 20000);
 
   if (!uploadRes.ok) {
     throw new Error(`LinkedIn media upload failed (${uploadRes.status})`);
@@ -183,7 +201,7 @@ async function publishToLinkedIn(params: {
     },
   };
 
-  const publishRes = await fetch('https://api.linkedin.com/v2/ugcPosts', {
+  const publishRes = await timeoutFetch('https://api.linkedin.com/v2/ugcPosts', {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${params.accessToken}`,
@@ -191,7 +209,7 @@ async function publishToLinkedIn(params: {
       'X-Restli-Protocol-Version': '2.0.0',
     },
     body: JSON.stringify(postBody),
-  });
+  }, 20000);
 
   if (!publishRes.ok) {
     const body = await publishRes.text();
@@ -207,6 +225,10 @@ addEventListener('fetch', (evt) => {
 
 async function handle(req: Request) {
   try {
+    if (req.method === 'OPTIONS') {
+      return new Response(null, { status: 200, headers: corsHeaders });
+    }
+
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, serviceKey);
@@ -216,40 +238,47 @@ async function handle(req: Request) {
     const encryptionKey = Deno.env.get('TOKEN_ENCRYPTION_KEY');
     if (!encryptionKey) throw new Error('TOKEN_ENCRYPTION_KEY not configured');
 
-    const BATCH_SIZE = 100;
+    const BATCH_SIZE = 1;
     let processed = 0;
 
-    // Process due posts in batches so older posts are not left in scheduled.
-    while (true) {
-      const now = new Date().toISOString();
-      const { data: posts, error: postsErr } = await supabase
-        .from('content_calendar')
-        .select('id,brand_id,platform,asset_url,caption,hook,hashtags,post_date')
-        .lte('post_date', now)
-        .eq('status', 'scheduled')
-        .order('post_date', { ascending: true })
-        .limit(BATCH_SIZE);
+    console.log('publish-scheduled start');
 
-      if (postsErr) throw postsErr;
-      if (!posts || posts.length === 0) break;
+    const now = new Date().toISOString();
+    const { data: posts, error: postsErr } = await supabase
+      .from('content_calendar')
+      .select('id,brand_id,platform,asset_url,caption,hook,hashtags,post_date')
+      .lte('post_date', now)
+      .eq('status', 'scheduled')
+      .order('post_date', { ascending: true })
+      .limit(BATCH_SIZE);
 
-      for (const p of posts) {
-        try {
-          if (p.platform !== 'linkedin') {
-            console.log('Skipping real publish for unsupported platform', p.platform, 'post', p.id);
-            await supabase.from('content_calendar').update({ status: 'published', published_at: new Date().toISOString() }).eq('id', p.id);
-            processed += 1;
-            continue;
-          }
+    if (postsErr) throw postsErr;
+    if (!posts || posts.length === 0) {
+      return new Response(JSON.stringify({ success: true, processed: 0 }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
 
-          const { data: conn, error: connErr } = await getLinkedInConnection(supabase, p.brand_id);
+    const p = posts[0];
+    try {
+      if (p.platform !== 'linkedin') {
+        console.log('Skipping real publish for unsupported platform', p.platform, 'post', p.id);
+        await supabase.from('content_calendar').update({ status: 'published', published_at: new Date().toISOString() }).eq('id', p.id);
+        processed += 1;
+      } else if (p.asset_url) {
+        await supabase.from('content_calendar').update({
+          status: 'failed',
+          last_error: 'Media posts are not published from the edge worker in this environment. Please republish as text-only or use an external media-capable runner.',
+        }).eq('id', p.id);
+        processed += 1;
+      } else {
+        const { data: conn, error: connErr } = await getLinkedInConnection(supabase, p.brand_id);
 
-          if (connErr || !conn) {
-            await supabase.from('content_calendar').update({ status: 'failed', last_error: 'LinkedIn connection not found' }).eq('id', p.id);
-            processed += 1;
-            continue;
-          }
-
+        if (connErr || !conn) {
+          await supabase.from('content_calendar').update({ status: 'failed', last_error: 'LinkedIn connection not found' }).eq('id', p.id);
+          processed += 1;
+        } else {
           const decrypted = JSON.parse(await decrypt(conn.encrypted_token, encryptionKey)) as PlatformTokenPayload;
           let accessToken = decrypted.access_token;
           let tokenToStore = decrypted;
@@ -290,31 +319,35 @@ async function handle(req: Request) {
             last_error: null,
           }).eq('id', p.id);
           processed += 1;
-        } catch (innerErr) {
-          console.error('publish error for post', p.id, innerErr);
-          const errorMessage = (innerErr as Error).message;
-          await supabase.from('content_calendar').update({
-            status: 'failed',
-            last_error: errorMessage,
-          }).eq('id', p.id);
+        }
+      }
+    } catch (innerErr) {
+      console.error('publish error for post', p.id, innerErr);
+      const errorMessage = (innerErr as Error).message;
+      await supabase.from('content_calendar').update({
+        status: 'failed',
+        last_error: errorMessage,
+      }).eq('id', p.id);
 
-          if (errorMessage.toLowerCase().includes('linkedin') || errorMessage.includes('401') || errorMessage.includes('403')) {
-            const { data: failedConn } = await getLinkedInConnection(supabase, p.brand_id);
-            if (failedConn?.id) {
-              await updateLinkedInConnection(supabase, failedConn.id, { needs_reauth: true, status: 'error' });
-            }
-          }
-
-          processed += 1;
+      if (errorMessage.toLowerCase().includes('linkedin') || errorMessage.includes('401') || errorMessage.includes('403')) {
+        const { data: failedConn } = await getLinkedInConnection(supabase, p.brand_id);
+        if (failedConn?.id) {
+          await updateLinkedInConnection(supabase, failedConn.id, { needs_reauth: true, status: 'error' });
         }
       }
 
-      if (posts.length < BATCH_SIZE) break;
+      processed += 1;
     }
 
-    return new Response(JSON.stringify({ success: true, processed }), { status: 200 });
+    return new Response(JSON.stringify({ success: true, processed }), {
+      status: 200,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
   } catch (err) {
     console.error('publish-scheduled error', err);
-    return new Response(JSON.stringify({ error: (err as Error).message }), { status: 500 });
+    return new Response(JSON.stringify({ error: (err as Error).message }), {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
   }
 }

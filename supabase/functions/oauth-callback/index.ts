@@ -38,58 +38,38 @@ async function encrypt(plaintext: string, keyB64: string) {
 }
 
 async function getLinkedInProfile(accessToken: string): Promise<LinkedInProfileResponse> {
-  const res = await fetch('https://api.linkedin.com/v2/userinfo', {
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-    },
-  });
+  const endpoints = [
+    'https://api.linkedin.com/v2/me?projection=(id,localizedFirstName,localizedLastName)',
+    'https://api.linkedin.com/v2/userinfo',
+  ];
 
-  if (!res.ok) {
-    throw new Error(`LinkedIn profile lookup failed (${res.status})`);
+  for (const endpoint of endpoints) {
+    const res = await fetch(endpoint, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'X-Restli-Protocol-Version': '2.0.0',
+      },
+    });
+
+    if (!res.ok) {
+      continue;
+    }
+
+    const data = await res.json();
+    return {
+      id: data.id || data.sub,
+      localizedFirstName:
+        typeof data.localizedFirstName === 'object'
+          ? data.localizedFirstName?.localized?.en_US
+          : data.localizedFirstName || data.given_name,
+      localizedLastName:
+        typeof data.localizedLastName === 'object'
+          ? data.localizedLastName?.localized?.en_US
+          : data.localizedLastName || data.family_name,
+    };
   }
 
-  const data = await res.json();
-  // Map userinfo response to our interface
-  return {
-    id: data.sub, // userinfo returns 'sub' instead of 'id'
-    localizedFirstName: data.given_name,
-    localizedLastName: data.family_name,
-  };
-}
-
-function buildResultHtml(status: 'connected' | 'error', platform: string, message: string) {
-  const safeMessage = message.replaceAll('</', '<\\/');
-
-  return `<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>${status === 'connected' ? 'Connected' : 'Connection failed'}</title>
-    <style>
-      body { font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif; background: #f8fafc; color: #0f172a; margin: 0; min-height: 100vh; display: grid; place-items: center; }
-      .card { background: white; padding: 24px 28px; border-radius: 16px; box-shadow: 0 16px 50px rgba(15, 23, 42, 0.12); max-width: 420px; width: calc(100vw - 32px); }
-      h1 { font-size: 20px; margin: 0 0 8px; }
-      p { margin: 0; line-height: 1.5; color: #334155; }
-    </style>
-  </head>
-  <body>
-    <div class="card">
-      <h1>${status === 'connected' ? 'LinkedIn connected' : 'LinkedIn connection failed'}</h1>
-      <p>${safeMessage}</p>
-    </div>
-    <script>
-      (function() {
-        try {
-          if (window.opener) {
-            window.opener.postMessage(${JSON.stringify({ type: 'oauth-complete', platform, status, message })}, '*');
-          }
-        } catch (error) {}
-        setTimeout(function() { window.close(); }, 250);
-      })();
-    </script>
-  </body>
-</html>`;
+  throw new Error('LinkedIn profile lookup failed');
 }
 
 async function exchangeCodeForToken(platform: string, code: string) : Promise<TokenResponse> {
@@ -185,17 +165,25 @@ async function handle(req: Request) {
 
     if (error) throw error;
 
-    return new Response(buildResultHtml('connected', platform, `${platform === 'linkedin' ? 'LinkedIn' : platform} account connected successfully.`), {
-      status: 200,
-      headers: { 'Content-Type': 'text/html; charset=utf-8' },
-    });
+    // Redirect to a client-hosted completion page which will postMessage to the opener and close the popup.
+    const clientUrl = Deno.env.get('OAUTH_CLIENT_URL') || Deno.env.get('OAUTH_REDIRECT_URI');
+    if (!clientUrl) throw new Error('OAUTH_CLIENT_URL not configured');
+    const userMessage = `${platform === 'linkedin' ? 'LinkedIn account connected successfully.' : `${platform} account connected successfully.`}`;
+    const redirectUrl = `${clientUrl.replace(/\/$/, '')}/_oauth_complete.html?platform=${encodeURIComponent(platform)}&status=connected&message=${encodeURIComponent(userMessage)}`;
+    return Response.redirect(redirectUrl, 302);
   } catch (err) {
     console.error('oauth-callback error', err);
     const message = (err as Error).message;
     const platform = new URL(req.url).searchParams.get('platform') || 'linkedin';
-    return new Response(buildResultHtml('error', platform, message), {
-      status: 200,
-      headers: { 'Content-Type': 'text/html; charset=utf-8' },
-    });
+    const clientUrl = Deno.env.get('OAUTH_CLIENT_URL') || Deno.env.get('OAUTH_REDIRECT_URI');
+    if (!clientUrl) {
+      return new Response(JSON.stringify({ error: message }), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json; charset=utf-8' },
+      });
+    }
+
+    const redirectUrl = `${clientUrl.replace(/\/$/, '')}/_oauth_complete.html?platform=${encodeURIComponent(platform)}&status=error&message=${encodeURIComponent(message)}`;
+    return Response.redirect(redirectUrl, 302);
   }
 }

@@ -12,7 +12,7 @@ interface TriggerWebhookPayload {
   brand_id: string;
   caption: string;
   hashtags: string[];
-  asset_url: string;
+  asset_url: string | null;
   platform: string;
   scheduled_utc: string;
   hook: string;
@@ -84,13 +84,6 @@ Deno.serve(async (req: Request) => {
       throw new Error("Post not found");
     }
 
-    if (!post.asset_url) {
-      return new Response(
-        JSON.stringify({ error: "MEDIA_REQUIRED: asset_url is null. Upload media before scheduling." }),
-        { status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
     // Convert local time to UTC
     const scheduledUtc = convertToUtc(post.scheduled_time, brand.timezone, post.post_date);
 
@@ -113,7 +106,7 @@ Deno.serve(async (req: Request) => {
           brand_id: payload.brand_id,
           caption: payload.caption,
           hashtags: payload.hashtags,
-          asset_url: payload.asset_url,
+          asset_url: payload.asset_url ?? null,
           platform: payload.platform,
           hook: payload.hook,
           post_date: post.post_date,
