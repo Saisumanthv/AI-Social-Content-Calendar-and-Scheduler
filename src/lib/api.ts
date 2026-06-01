@@ -127,6 +127,20 @@ export async function deletePlatformConnection(brandId: string, platformName: st
   if (error) throw error;
 }
 
+export async function updatePlatformConnectionPublishTarget(
+  brandId: string,
+  platformName: string,
+  publishTargetUrn: string | null,
+): Promise<void> {
+  const { error } = await supabase
+    .from('platform_connections')
+    .update({ publish_target_urn: publishTargetUrn })
+    .eq('brand_id', brandId)
+    .eq('platform_name', platformName);
+
+  if (error) throw error;
+}
+
 // Platform Connections
 export async function getPlatformConnections(brandId: string): Promise<PlatformConnection[]> {
   const { data, error } = await supabase
@@ -164,7 +178,36 @@ export async function triggerWebhook(
   return edgeFetch('trigger-webhook', payload);
 }
 
-export async function getOAuthStartUrl(platform: string): Promise<string> {
-  const result = await edgeFetch<{ url: string }>('oauth-start', { platform });
+export async function getOAuthStartUrl(
+  platform: string,
+  scopeType: 'personal' | 'all' = 'all',
+  state: string = '',
+): Promise<string> {
+  const url = new URL(`${SUPABASE_URL}/functions/v1/oauth-start`);
+  url.searchParams.set('platform', platform);
+  url.searchParams.set('scope_type', scopeType);
+  if (state) {
+    url.searchParams.set('state', state);
+  }
+
+  const { data: { session } } = await supabase.auth.getSession();
+  const token = session?.access_token ?? SUPABASE_ANON_KEY;
+
+  const res = await fetch(url.toString(), {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+      Apikey: SUPABASE_ANON_KEY,
+    },
+    body: JSON.stringify({ platform, scope_type: scopeType, state }),
+  });
+
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(err || `Edge function oauth-start failed: ${res.status}`);
+  }
+
+  const result = await res.json() as { url: string };
   return result.url;
 }

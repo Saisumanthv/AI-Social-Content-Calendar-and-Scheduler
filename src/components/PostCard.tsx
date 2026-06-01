@@ -1,7 +1,7 @@
-import { Pencil as Edit2, CheckCircle2, RotateCcw, ImageOff } from 'lucide-react';
+import { Pencil as Edit2, CheckCircle2, RotateCcw, Trash2, ImageOff } from 'lucide-react';
 import { StatusBadge } from './ui/Badge';
 import { Button } from './ui/Button';
-import { useTriggerWebhook, useUpdatePostStatus } from '../hooks/useCalendar';
+import { useDeletePost, useTriggerWebhook, useUpdatePostStatus } from '../hooks/useCalendar';
 import type { ContentCalendarPost } from '../types/database';
 
 interface Props {
@@ -13,6 +13,7 @@ interface Props {
 export function PostCard({ post, onEdit, onTokenError }: Props) {
   const trigger = useTriggerWebhook(post.brand_id);
   const updateStatus = useUpdatePostStatus(post.brand_id);
+  const deletePost = useDeletePost(post.brand_id);
 
   const canApprove = post.status === 'draft';
   const canRetry = post.status === 'failed';
@@ -44,7 +45,14 @@ export function PostCard({ post, onEdit, onTokenError }: Props) {
     await handleApprove();
   }
 
-  const isPending = trigger.isPending || updateStatus.isPending;
+  async function handleDelete() {
+    const confirmed = window.confirm('Delete this post? This cannot be undone.');
+    if (!confirmed) return;
+
+    await deletePost.mutateAsync(post.id);
+  }
+
+  const isPending = trigger.isPending || updateStatus.isPending || deletePost.isPending;
 
   return (
     <div className="bg-white rounded-lg border border-border shadow-sm hover:shadow-md transition-all duration-200 p-3 group animate-fade-in">
@@ -69,7 +77,7 @@ export function PostCard({ post, onEdit, onTokenError }: Props) {
         </div>
       )}
 
-      <div className="flex gap-1.5 pt-1">
+      <div className="flex items-center gap-1.5 pt-1">
         <button
           onClick={() => onEdit(post)}
           className="p-1.5 rounded text-muted-foreground hover:text-primary-600 hover:bg-primary-50 transition-colors"
@@ -103,6 +111,15 @@ export function PostCard({ post, onEdit, onTokenError }: Props) {
             Retry
           </Button>
         )}
+
+        <button
+          onClick={handleDelete}
+          disabled={isPending}
+          className="p-1.5 rounded text-muted-foreground hover:text-error-600 hover:bg-error-50 transition-colors disabled:opacity-50 disabled:pointer-events-none"
+          title="Delete"
+        >
+          <Trash2 size={13} />
+        </button>
       </div>
     </div>
   );

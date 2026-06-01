@@ -81,13 +81,27 @@
         const platform = qs('platform');
         const status = qs('status');
         const message = qs('message');
+        const csrf = qs('csrf');
         
-        // Update UI based on status
+        // CSRF Verification
+        const storedCsrf = localStorage.getItem('oauth_csrf_' + platform);
+        let csrfValid = false;
+        if (storedCsrf && csrf === storedCsrf) {
+          csrfValid = true;
+        }
+        localStorage.removeItem('oauth_csrf_' + platform);
+        
         const titleEl = document.getElementById('title');
         const messageEl = document.getElementById('message');
         const icon = document.querySelector('.icon');
         
-        if (status === 'error') {
+        if (!csrfValid) {
+          titleEl.textContent = 'Security Check Failed';
+          messageEl.textContent = 'Cross-Site Request Forgery (CSRF) detected. The connection was blocked for security reasons.';
+          icon.textContent = '✕';
+          icon.style.background = '#fee2e2';
+          titleEl.style.color = '#7f1d1d';
+        } else if (status === 'error') {
           titleEl.textContent = 'Connection Failed';
           messageEl.textContent = message || 'An error occurred during connection.';
           icon.textContent = '✕';
@@ -98,23 +112,27 @@
           messageEl.textContent = message || 'Your account has been connected successfully.';
         }
         
-        // Send message to opener
-        const data = { type: 'oauth-complete', platform, status, message };
-        try {
-          if (window.opener && typeof window.opener.postMessage === 'function') {
-            window.opener.postMessage(data, '*');
-          }
-        } catch (e){}
-        
-        // Try to auto-close after a short delay; if blocked, fallback to about:blank first.
-        setTimeout(()=>{
+        // Send message to opener only if CSRF is valid
+        if (csrfValid && status !== 'error') {
+          const data = { type: 'oauth-complete', platform, status, message };
           try {
-            window.open('', '_self');
-            window.close();
-          } catch (e) {
-            try { window.location.href = 'about:blank'; window.close(); } catch (innerError) {}
-          }
-        }, 250);
+            if (window.opener && typeof window.opener.postMessage === 'function') {
+              window.opener.postMessage(data, '*');
+            }
+          } catch (e){}
+        }
+        
+        // Auto-close only if successfully validated and connected
+        if (csrfValid && status !== 'error') {
+          setTimeout(()=>{
+            try {
+              window.open('', '_self');
+              window.close();
+            } catch (e) {
+              try { window.location.href = 'about:blank'; window.close(); } catch (innerError) {}
+            }
+          }, 250);
+        }
       })();
     </script>
   </body>

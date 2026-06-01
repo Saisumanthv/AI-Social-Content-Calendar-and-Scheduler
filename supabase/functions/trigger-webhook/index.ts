@@ -23,13 +23,47 @@ function convertToUtc(localTime: string, timezone: string, postDate: string): st
     const [hours, minutes] = localTime.split(":").map(Number);
     const [year, month, day] = postDate.split("T")[0].split("-").map(Number);
 
-    const localDate = new Date(year, month - 1, day, hours, minutes, 0);
-    const utcDate = new Date(localDate.toLocaleString("en-US", { timeZone: "UTC" }));
-    const tzDate = new Date(localDate.toLocaleString("en-US", { timeZone: timezone }));
-    const offset = utcDate.getTime() - tzDate.getTime();
-    const scheduledUtc = new Date(localDate.getTime() + offset);
+    // 1. Construct a date object representing the target year-month-day at hours:minutes in UTC.
+    const utcDate = new Date(Date.UTC(year, month - 1, day, hours, minutes, 0));
+
+    // 2. Format this UTC date back to check what local time it represents in the target timezone.
+    const formatter = new Intl.DateTimeFormat("en-US", {
+      timeZone: timezone,
+      year: "numeric",
+      month: "numeric",
+      day: "numeric",
+      hour: "numeric",
+      minute: "numeric",
+      second: "numeric",
+      hour12: false,
+    });
+
+    const parts = formatter.formatToParts(utcDate);
+    const partValues: Record<string, number> = {};
+    for (const part of parts) {
+      if (part.type !== "literal") {
+        partValues[part.type] = Number(part.value);
+      }
+    }
+
+    // 3. Create a representation of this local time as if it were in UTC.
+    const formattedLocal = new Date(Date.UTC(
+      partValues.year,
+      partValues.month - 1,
+      partValues.day,
+      partValues.hour === 24 ? 0 : partValues.hour,
+      partValues.minute,
+      partValues.second || 0
+    ));
+
+    // 4. The difference tells us the exact offset in ms for that timezone at that specific date/time.
+    const offsetMs = utcDate.getTime() - formattedLocal.getTime();
+
+    // 5. Adjust the target date by the offset to get the correct UTC time.
+    const scheduledUtc = new Date(utcDate.getTime() + offsetMs);
     return scheduledUtc.toISOString();
-  } catch {
+  } catch (err) {
+    console.error("convertToUtc failed, fallback to default parse:", err);
     return new Date(postDate).toISOString();
   }
 }

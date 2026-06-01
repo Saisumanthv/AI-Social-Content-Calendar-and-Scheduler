@@ -41,7 +41,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         await upsertBrandProfile({ user_id: user.id });
       } catch (err) {
         // Non-fatal: log and continue
-        // eslint-disable-next-line no-console
         console.error('Failed to upsert brand profile:', err);
       }
     }

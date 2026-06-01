@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Link2, CheckCircle2, Clock3, ExternalLink } from 'lucide-react';
+import { Link2, CheckCircle2, Clock3, ExternalLink, ShieldCheck, ShieldAlert } from 'lucide-react';
 import { Button } from './ui/Button';
+import { Modal } from './ui/Modal';
 import { deletePlatformConnection, getOAuthStartUrl } from '../lib/api';
 import { usePlatformConnections } from '../hooks/useCalendar';
 import type { BrandProfile } from '../types/database';
@@ -18,7 +19,7 @@ const PLATFORMS: PlatformCard[] = [
     key: 'linkedin',
     name: 'LinkedIn',
     description: 'Connect your LinkedIn account to publish professional content from the user’s own profile.',
-    scopes: 'w_member_social, r_liteprofile',
+    scopes: 'w_member_social, openid, profile',
     enabled: true,
   },
   {
@@ -31,7 +32,7 @@ const PLATFORMS: PlatformCard[] = [
   {
     key: 'instagram',
     name: 'Instagram',
-    description: 'Connect your Instagram account to publish content directly from your profile.',
+    description: 'Connect your Instagram account to simulate publishing (real API integration coming soon).',
     scopes: 'instagram_content_publish, pages_manage_posts, pages_read_engagement',
     enabled: true,
   },
@@ -45,6 +46,9 @@ interface Props {
 export function ConnectionsPanel({ brand, onMessage }: Props) {
   const { data: connections = [], isLoading, refetch } = usePlatformConnections(brand.id);
   const [connectingPlatform, setConnectingPlatform] = useState<string | null>(null);
+  const [showConsentModal, setShowConsentModal] = useState(false);
+  const [consentPlatform, setConsentPlatform] = useState<string | null>(null);
+  const [consentScopeType, setConsentScopeType] = useState<'personal' | 'all'>('personal');
 
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
@@ -56,11 +60,11 @@ export function ConnectionsPanel({ brand, onMessage }: Props) {
         if (!popupWindow) return;
         try {
           popupWindow.close();
-        } catch (e) {
+        } catch {
           try {
             popupWindow.location.href = 'about:blank';
             popupWindow.close();
-          } catch (innerError) {
+          } catch {
             // ignore
           }
         }
@@ -69,10 +73,10 @@ export function ConnectionsPanel({ brand, onMessage }: Props) {
       closePopup(event.source as Window | null);
 
       try {
-        const winAny = window as any;
-        closePopup(winAny._oauthPopup as Window | null);
-        winAny._oauthPopup = null;
-      } catch (e) {
+        const win = window as Window & { _oauthPopup?: Window | null };
+        closePopup(win._oauthPopup);
+        win._oauthPopup = null;
+      } catch {
         // ignore
       }
 
@@ -98,24 +102,47 @@ export function ConnectionsPanel({ brand, onMessage }: Props) {
 
     // keep a global reference so we can close it from the main window if needed
     try {
-      (window as any)._oauthPopup = popup;
-    } catch (e) {}
+      (window as Window & { _oauthPopup?: Window | null })._oauthPopup = popup;
+    } catch {
+      // ignore
+    }
 
     const popupWatcher = window.setInterval(() => {
       if (popup.closed) {
         window.clearInterval(popupWatcher);
         setConnectingPlatform(null);
-        try { (window as any)._oauthPopup = null; } catch (e) {}
+        try {
+          (window as Window & { _oauthPopup?: Window | null })._oauthPopup = null;
+        } catch {
+          // ignore
+        }
       }
     }, 500);
 
-    try { popup.focus(); } catch (e) {}
+    try {
+      popup.focus();
+    } catch {
+      // ignore
+    }
   }
 
-  async function handleConnect(platform: string) {
+  function handleConnect(platform: string, scopeType: 'personal' | 'all' = 'all') {
+    if (platform === 'linkedin') {
+      setConsentPlatform(platform);
+      setConsentScopeType(scopeType);
+      setShowConsentModal(true);
+    } else {
+      void executeConnect(platform, scopeType);
+    }
+  }
+
+  async function executeConnect(platform: string, scopeType: 'personal' | 'all' = 'all') {
     try {
-      const url = await getOAuthStartUrl(platform);
-      const authUrl = `${url}&state=${encodeURIComponent(brand.id)}`;
+      const csrfState = crypto.randomUUID();
+      localStorage.setItem(`oauth_csrf_${platform}`, csrfState);
+
+      const stateParam = `${csrfState}:${brand.id}`;
+      const authUrl = await getOAuthStartUrl(platform, scopeType, stateParam);
       setConnectingPlatform(platform);
       openOAuthPopup(authUrl);
     } catch (err) {
@@ -191,7 +218,7 @@ export function ConnectionsPanel({ brand, onMessage }: Props) {
                 <Button
                   size="sm"
                   variant={connected ? 'secondary' : 'primary'}
-                  onClick={() => (connected ? handleDisconnect(platform.key) : handleConnect(platform.key))}
+                  onClick={() => (connected ? handleDisconnect(platform.key) : handleConnect(platform.key, 'personal'))}
                   disabled={!platform.enabled || connectingPlatform === platform.key || isLoading}
                   className="flex-1"
                 >
@@ -215,6 +242,68 @@ export function ConnectionsPanel({ brand, onMessage }: Props) {
           );
         })}
       </div>
+
+      <Modal
+        open={showConsentModal}
+        onClose={() => setShowConsentModal(false)}
+        title="Connect LinkedIn Profile"
+        maxWidth="md"
+      >
+        <div className="space-y-5 text-sm text-neutral-600 leading-relaxed">
+          <p>
+            To enable automated content scheduling and publishing, you will be redirected to LinkedIn to authorize a secure connection to your personal account.
+          </p>
+
+          <div className="grid gap-4 sm:grid-cols-2 mt-2">
+            <div className="p-4 bg-success-50/50 rounded-xl border border-success-100 space-y-2.5">
+              <div className="flex items-center gap-2 text-success-800 font-semibold">
+                <ShieldCheck size={16} />
+                <span>What we do:</span>
+              </div>
+              <ul className="list-disc pl-4 text-xs text-success-700 space-y-1">
+                <li>Display your public profile name on the dashboard.</li>
+                <li>Securely publish scheduled posts directly to your feed.</li>
+              </ul>
+            </div>
+
+            <div className="p-4 bg-neutral-50 rounded-xl border border-border space-y-2.5">
+              <div className="flex items-center gap-2 text-neutral-700 font-semibold">
+                <ShieldAlert size={16} />
+                <span>What we NEVER do:</span>
+              </div>
+              <ul className="list-disc pl-4 text-xs text-neutral-600 space-y-1">
+                <li>Access your private messages or list of connections.</li>
+                <li>Publish any content without your explicit schedule and approval.</li>
+              </ul>
+            </div>
+          </div>
+
+          <div className="bg-primary-50 p-4 rounded-xl border border-primary-100 text-xs text-primary-700">
+            <strong>Security Notice:</strong> LinkedIn will show a standard authorization prompt confirming these credentials. You can disconnect your account at any time with a single click.
+          </div>
+
+          <div className="flex justify-end gap-3 pt-2 border-t border-border">
+            <Button
+              variant="secondary"
+              onClick={() => setShowConsentModal(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              icon={<ExternalLink size={14} />}
+              onClick={() => {
+                setShowConsentModal(false);
+                if (consentPlatform) {
+                  void executeConnect(consentPlatform, consentScopeType);
+                }
+              }}
+            >
+              Proceed to LinkedIn
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </section>
   );
 }

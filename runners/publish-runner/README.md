@@ -10,7 +10,11 @@ Required environment variables:
 - `LINKEDIN_CLIENT_ID` (for token refresh)
 - `LINKEDIN_CLIENT_SECRET` (for token refresh)
 - `OAUTH_REDIRECT_URI`
-- `BATCH_SIZE` (optional, default 10)
+- `REDIS_URL` (optional, default: `redis://127.0.0.1:6379`)
+- `RATE_LIMIT_MAX` (optional, default: `5` - maximum number of jobs processed within rate limit duration)
+- `RATE_LIMIT_DURATION_MS` (optional, default: `60000` - duration window in milliseconds for rate limits)
+- `RETRY_ATTEMPTS` (optional, default: `3` - number of attempts for failing jobs)
+- `RETRY_BACKOFF_DELAY_MS` (optional, default: `5000` - base delay in milliseconds for exponential backoff retries)
 
 Run locally:
 

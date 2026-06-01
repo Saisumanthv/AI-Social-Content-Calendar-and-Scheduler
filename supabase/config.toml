@@ -1,0 +1,2 @@
+[functions.oauth-callback]
+verify_jwt = false

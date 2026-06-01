@@ -1,0 +1,95 @@
+Listed directory AI-Social-Content-Calendar-and-Scheduler
+Listed directory supabase
+Listed directory functions
+Listed directory migrations
+Listed directory runners
+Listed directory publish-runner
+Viewed index.js:1-256
+Listed directory publish-scheduled
+Viewed index.ts:1-356
+Viewed 20260425061847_create_social_scheduler_schema.sql:1-258
+Viewed 20260521134500_schedule_publish_scheduled_job.sql:1-33
+Viewed 20260522033000_authorize_scheduled_edge_jobs.sql:1-64
+Viewed index.ts:1-62
+Viewed index.ts:1-59
+Viewed index.ts:1-190
+Viewed 20260522010000_add_oauth_and_publish_columns.sql:1-16
+Viewed 20260425072137_add_unique_constraints.sql:1-14
+Viewed 20260522034500_fail_overdue_posts_in_cron.sql:1-44
+Searched for "oauth-start"
+Viewed api.ts:1-192
+Searched for "getOAuthStartUrl"
+Viewed ConnectionsPanel.tsx:1-220
+Searched for "_oauth_complete.html"
+Listed directory public
+Viewed _oauth_complete.html:1-122
+Viewed Dockerfile:1-8
+Viewed README.md:1-31
+Listed directory .github
+Listed directory workflows
+Viewed publish-runner.yml:1-30
+Viewed package.json:1-39
+Viewed package.json:1-16
+
+Here is a detailed comparison of your project's current implementation against the architecture and features described by Gemini. 
+
+---
+
+### **1. Authentication & Identity Features**
+
+| Feature/Detail | Implemented? | Notes / Gaps |
+| :--- | :---: | :--- |
+| **3-Legged OAuth 2.0 Flow** | **Yes** | Fully implemented in the [oauth-start/index.ts](file:///c:/Users/DELL/Desktop/AI-Social-Content-Calendar-and-Scheduler/supabase/functions/oauth-start/index.ts) and [oauth-callback/index.ts](file:///c:/Users/DELL/Desktop/AI-Social-Content-Calendar-and-Scheduler/supabase/functions/oauth-callback/index.ts) Supabase Edge Functions. |
+| **Sign In with LinkedIn using OpenID Connect** | **Yes** | Implemented in [oauth-callback/index.ts](file:///c:/Users/DELL/Desktop/AI-Social-Content-Calendar-and-Scheduler/supabase/functions/oauth-callback/index.ts#L40-L73) by calling LinkedIn's profile endpoints (`/v2/me` or `/v2/userinfo`) to query the user identity (URN ID). |
+| **`w_member_social` scope** | **Yes** | Requested to allow posting on behalf of personal profiles (see [oauth-start/index.ts:L21](file:///c:/Users/DELL/Desktop/AI-Social-Content-Calendar-and-Scheduler/supabase/functions/oauth-start/index.ts#L21)). |
+| **`w_organization_social` scope** | **No** | **Gap:** Not currently requested. The project does not have code or scopes to publish to LinkedIn Company Pages. |
+| **State Verification & CSRF Mitigation** | **No** | **Gap:** In [ConnectionsPanel.tsx:L118](file:///c:/Users/DELL/Desktop/AI-Social-Content-Calendar-and-Scheduler/src/components/ConnectionsPanel.tsx#L118), the `state` sent to LinkedIn is hardcoded to `brand.id`. There is no session-based verification of a cryptographically secure random string on callback to mitigate CSRF attacks. |
+| **Token Exchange** | **Yes** | Code exchanged for access tokens via POST to `https://www.linkedin.com/oauth/v2/accessToken` in [oauth-callback/index.ts:L84](file:///c:/Users/DELL/Desktop/AI-Social-Content-Calendar-and-Scheduler/supabase/functions/oauth-callback/index.ts#L84). |
+| **AES-256-GCM Token Encryption** | **Yes** | Implemented using the Web Cryptography API (`AES-GCM` with a 256-bit key from `TOKEN_ENCRYPTION_KEY`) in [oauth-callback/index.ts:L25-L38](file:///c:/Users/DELL/Desktop/AI-Social-Content-Calendar-and-Scheduler/supabase/functions/oauth-callback/index.ts#L25-L38) and decrypted in the workers. |
+| **Token Refresh Management** | **Yes** | Both [publish-scheduled/index.ts](file:///c:/Users/DELL/Desktop/AI-Social-Content-Calendar-and-Scheduler/supabase/functions/publish-scheduled/index.ts#L289-L306) and [publish-runner/index.js](file:///c:/Users/DELL/Desktop/AI-Social-Content-Calendar-and-Scheduler/runners/publish-runner/index.js#L198-L222) feature a check to refresh tokens prior to publishing. However, there is no separate daemon to keep them refreshed unless a post is actively being published. |
+
+---
+
+### **2. Post Scheduling & Distributed Queues**
+
+| Feature/Detail | Implemented? | Notes / Gaps |
+| :--- | :---: | :--- |
+| **Database Schema** | **Yes** | Normalized into two tables (rather than duplicating tokens): `content_calendar` (posts & schedule) and `platform_connections` (encrypted credentials). See [20260425061847_create_social_scheduler_schema.sql](file:///c:/Users/DELL/Desktop/AI-Social-Content-Calendar-and-Scheduler/supabase/migrations/20260425061847_create_social_scheduler_schema.sql). |
+| **Message Broker (Redis/Celery/BullMQ)** | **No** | **Alternative architecture:** Instead of Redis/BullMQ, your system uses **Database Polling** via PostgreSQL extensions (`pg_cron` + `pg_net`) to trigger the [publish-scheduled/index.ts](file:///c:/Users/DELL/Desktop/AI-Social-Content-Calendar-and-Scheduler/supabase/functions/publish-scheduled/index.ts) Edge Function every minute. |
+| **ZSET / TTL Delayed Messaging** | **No** | Posts are queried directly from Postgres using SQL (`post_date <= now() AND status = 'scheduled'`) instead of a Redis sorted set. |
+| **Token Bucket Rate Limiting** | **No** | **Gap:** No rate-limiting or concurrency control algorithms are implemented. The queue processes batch blocks as fast as Deno/Node permits. |
+| **Exponential Backoff & Retries** | **No** | **Gap:** Fails immediately upon first error and updates status to `failed` (see [publish-scheduled/index.ts:L326-L342](file:///c:/Users/DELL/Desktop/AI-Social-Content-Calendar-and-Scheduler/supabase/functions/publish-scheduled/index.ts#L326-L342)). No exponential backoff retries are implemented. |
+
+---
+
+### **3. Post Execution (The LinkedIn API Core)**
+
+| Feature/Detail | Implemented? | Notes / Gaps |
+| :--- | :---: | :--- |
+| **`X-Restli-Protocol-Version: 2.0.0` Header** | **Yes** | Attached to LinkedIn API requests. |
+| **`Linkedin-Version` Header** | **No** | **Reason:** The codebase uses LinkedIn's older **UGC Posts API** (`/v2/ugcPosts`) and assets API which are unversioned. The newer Community Management `/rest/posts` API requires this header, which this project does not target. |
+| **Payload Structuring & URNs** | **Yes** | Author URN formatting (`urn:li:person:...`), visibility, and lifecycleState are correctly set. |
+| **Media Multi-Step Upload Pipeline** | **Yes** | Implemented via asset registration, binary PUT upload, and UGC attachment. |
+| **Media Limitations** | **Partial** | **Limitation:** The [publish-scheduled/index.ts:L271-L276](file:///c:/Users/DELL/Desktop/AI-Social-Content-Calendar-and-Scheduler/supabase/functions/publish-scheduled/index.ts#L271-L276) Edge Function refuses to publish posts containing media assets due to edge resource limits, failing them automatically. However, the Node.js [publish-runner/index.js](file:///c:/Users/DELL/Desktop/AI-Social-Content-Calendar-and-Scheduler/runners/publish-runner/index.js) fully supports media uploads. |
+
+---
+
+### **4. Tech Stack Blueprint**
+
+| Layer | Gemini Recommendation | Your Project Stack |
+| :--- | :--- | :--- |
+| **Backend Framework** | FastAPI (Python) or Express (Node) | **Supabase Edge Functions** (Deno TypeScript) |
+| **Database** | PostgreSQL | **PostgreSQL** (via Supabase) |
+| **In-Memory Store** | Redis | **None** |
+| **Distributed Workers** | Celery or BullMQ | **pg_cron / pg_net Edge Trigger** + cron-scheduled **GitHub Action Node runner** ([publish-runner.yml](file:///c:/Users/DELL/Desktop/AI-Social-Content-Calendar-and-Scheduler/.github/workflows/publish-runner.yml)) |
+| **Cryptography** | Cryptography (Python) or Node-Crypto | **Web Cryptography API** (`crypto.subtle`) |
+
+---
+
+### **Summary of Missing Features & Gaps**
+1. **CSRF Mitigation**: Currently, your OAuth state is not verified against a cryptographically secure random session token.
+2. **Company Page Scopes**: The `w_organization_social` scope and corresponding organization URN logic are missing.
+3. **Queue Architecture**: Your project relies on database polling every minute rather than a distributed message queue (Redis/BullMQ).
+4. **Rate Limiting**: No rate-limiting exists, which could trigger LinkedIn `429 Too Many Requests` errors under heavy load.
+5. **Retries with Backoff**: Unsuccessful attempts immediately transition to `failed` status rather than using exponential backoff with jitter.
+6. **LinkedIn Version Headers**: Missing because the legacy unversioned UGC API is utilized instead of the versioned Community Management API.

@@ -17,7 +17,7 @@ export function StatusBadge({ status }: BadgeProps) {
 }
 
 interface TagBadgeProps {
-  children: string;
+  children: React.ReactNode;
   onRemove?: () => void;
 }
 

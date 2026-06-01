@@ -15,7 +15,10 @@ interface GenerateContentPayload {
   target_audience: string;
   timezone: string;
   start_date: string;
-  platform: string;
+  platforms: string[];
+  scheduled_time: string;
+  initial_idea: string;
+  idea?: string;
 }
 
 interface GeneratedPost {
@@ -28,57 +31,111 @@ interface GeneratedPost {
   platform: string;
 }
 
+function convertToUtc(scheduledTime: string, timezone: string, postDate: string): string {
+  try {
+    const [hours, minutes] = scheduledTime.split(":").map(Number);
+    const [year, month, day] = postDate.split("T")[0].split("-").map(Number);
+
+    // 1. Construct a date object representing the target year-month-day at hours:minutes in UTC.
+    const utcDate = new Date(Date.UTC(year, month - 1, day, hours, minutes, 0));
+
+    // 2. Format this UTC date back to check what local time it represents in the target timezone.
+    const formatter = new Intl.DateTimeFormat("en-US", {
+      timeZone: timezone,
+      year: "numeric",
+      month: "numeric",
+      day: "numeric",
+      hour: "numeric",
+      minute: "numeric",
+      second: "numeric",
+      hour12: false,
+    });
+
+    const parts = formatter.formatToParts(utcDate);
+    const partValues: Record<string, number> = {};
+    for (const part of parts) {
+      if (part.type !== "literal") {
+        partValues[part.type] = Number(part.value);
+      }
+    }
+
+    // 3. Create a representation of this local time as if it were in UTC.
+    const formattedLocal = new Date(Date.UTC(
+      partValues.year,
+      partValues.month - 1,
+      partValues.day,
+      partValues.hour === 24 ? 0 : partValues.hour,
+      partValues.minute,
+      partValues.second || 0
+    ));
+
+    // 4. The difference tells us the exact offset in ms for that timezone at that specific date/time.
+    const offsetMs = utcDate.getTime() - formattedLocal.getTime();
+
+    // 5. Adjust the target date by the offset to get the correct UTC time.
+    const scheduledUtc = new Date(utcDate.getTime() + offsetMs);
+    return scheduledUtc.toISOString();
+  } catch (err) {
+    console.error("convertToUtc failed, fallback to default parse:", err);
+    return new Date(postDate).toISOString();
+  }
+}
+
 function buildPrompt(payload: GenerateContentPayload): string {
   const pillarsStr = payload.content_pillars.join(", ");
-  return `You are a professional social media strategist. Generate a 30-day content calendar for the following brand.
+  const platformsStr = payload.platforms.join(", ");
+  const initialIdea = payload.initial_idea || payload.idea || "None provided";
+  return `You are a professional social media strategist. Generate exactly 1 social media post for the following brand.
 
 Brand Name: ${payload.brand_name}
 Brand Tone: ${payload.brand_tone}
 Content Pillars: ${pillarsStr}
 Target Audience: ${payload.target_audience}
-Platform: ${payload.platform}
+Target Platforms: ${platformsStr}
 Start Date: ${payload.start_date}
+Initial Idea: ${initialIdea}
+Preferred Posting Time: ${payload.scheduled_time}
 
-Return ONLY a valid JSON array of exactly 30 objects. No markdown, no explanation, just the JSON array.
+Return ONLY a valid JSON array of exactly 1 object. No markdown, no explanation, just the JSON array.
 
 Each object must have these exact fields:
-- "day": integer (1-30)
+- "day": integer (1)
 - "post_date": ISO 8601 date string (YYYY-MM-DD) starting from ${payload.start_date} and incrementing daily
 - "hook": string (attention-grabbing opening line, max 15 words)
-- "caption": string (full post caption, 150-300 words, platform-optimized for ${payload.platform})
+- "caption": string (full post caption, 150-300 words, platform-optimized for one of: ${platformsStr})
 - "hashtags": array of strings (10-15 relevant hashtags, no # prefix)
 - "image_prompt": string (detailed prompt for AI image generation, 30-50 words)
-- "platform": string ("${payload.platform}")
+- "platform": string (must be one of: ${platformsStr})
 
-Distribute content across all pillars: ${pillarsStr}. Vary post types (educational, entertaining, promotional, user-story, behind-scenes). Make each post unique.`;
+Distribute content across all pillars: ${pillarsStr}. Vary post types (educational, entertaining, promotional, user-story, behind-scenes). Use the initial idea as the creative seed, if provided. Make each post unique and distribute the posts across the selected platforms as evenly as possible.`;
 }
 
-async function callGroq(prompt: string, apiKey: string): Promise<GeneratedPost[]> {
+async function callGemini(prompt: string, apiKey: string): Promise<GeneratedPost[]> {
   const response = await fetch(
-    `https://api.groq.com/openai/v1/chat/completions`,
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
     {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: "mixtral-8x7b-32768",
-        messages: [{ role: "user", content: prompt }],
-        temperature: 0.8,
-        top_p: 0.9,
-        max_tokens: 16384,
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        generationConfig: {
+          temperature: 0.8,
+          topP: 0.9,
+          maxOutputTokens: 16384,
+        },
       }),
     }
   );
 
   if (!response.ok) {
     const err = await response.text();
-    throw new Error(`Groq API error: ${response.status} - ${err}`);
+    throw new Error(`Gemini API error: ${response.status} - ${err}`);
   }
 
   const result = await response.json();
-  const text: string = result.choices?.[0]?.message?.content ?? "";
+  const text: string = result.candidates?.[0]?.content?.parts?.map((part: { text?: string }) => part.text ?? "").join("") ?? "";
 
   return parseAndValidateJson(text);
 }
@@ -122,7 +179,7 @@ function parseAndValidateJson(raw: string): GeneratedPost[] {
   return posts as unknown as GeneratedPost[];
 }
 
-async function callGroqWithSelfCorrection(
+async function callGeminiWithSelfCorrection(
   payload: GenerateContentPayload,
   apiKey: string,
   maxAttempts = 3,
@@ -136,12 +193,12 @@ async function callGroqWithSelfCorrection(
 
 PREVIOUS ATTEMPT FAILED WITH ERROR: ${lastError}
 
-Please fix the JSON and return ONLY the valid JSON array. Ensure all 30 posts have all required fields.`;
+Please fix the JSON and return ONLY the valid JSON array. Ensure the single post has all required fields.`;
 
     try {
-      const posts = await callGroq(prompt, apiKey);
-      if (posts.length !== 30) {
-        throw new Error(`LLM_VALIDATION_FAILED: Expected 30 posts, got ${posts.length}`);
+      const posts = await callGemini(prompt, apiKey);
+      if (posts.length !== 1) {
+        throw new Error(`LLM_VALIDATION_FAILED: Expected 1 post, got ${posts.length}`);
       }
       return posts;
     } catch (err) {
@@ -160,8 +217,8 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const GROQ_API_KEY = Deno.env.get("GEMINI_API_KEY");
-    if (!GROQ_API_KEY) {
+    const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
+    if (!GEMINI_API_KEY) {
       throw new Error("GEMINI_API_KEY secret not configured");
     }
 
@@ -170,53 +227,58 @@ Deno.serve(async (req: Request) => {
     const supabase = createClient(supabaseUrl, serviceKey);
 
     const payload: GenerateContentPayload = await req.json();
-    const { brand_id, start_date, platform } = payload;
+    const { brand_id, start_date, platforms, scheduled_time, initial_idea, idea } = payload;
 
-    if (!brand_id || !start_date) {
+    if (!brand_id || !start_date || !scheduled_time || !Array.isArray(platforms) || platforms.length === 0) {
       return new Response(
-        JSON.stringify({ error: "Missing required fields: brand_id, start_date" }),
+        JSON.stringify({ error: "Missing required fields: brand_id, start_date, scheduled_time, platforms" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    const generatedPosts = await callGroqWithSelfCorrection(payload, GROQ_API_KEY);
-
-    const { error: deleteError } = await supabase
+    const { count: activeCount, error: activeCountError } = await supabase
       .from("content_calendar")
-      .delete()
+      .select("id", { count: "exact", head: true })
       .eq("brand_id", brand_id)
-      .eq("status", "draft");
+      .in("status", ["draft", "scheduled"]);
 
-    if (deleteError) throw deleteError;
+    if (activeCountError) throw activeCountError;
+    if ((activeCount ?? 0) >= 5) {
+      return new Response(
+        JSON.stringify({ error: "You can only have 5 active posts at a time. Publish, complete, or fail one first." }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
 
-    const rows = generatedPosts.map((p) => ({
+    payload.initial_idea = initial_idea || idea || "";
+
+    const generatedPosts = await callGeminiWithSelfCorrection(payload, GEMINI_API_KEY);
+
+    const post = generatedPosts[0];
+    const row = {
       brand_id,
-      post_date: new Date(`${p.post_date}T09:00:00Z`).toISOString(),
-      hook: p.hook,
-      caption: p.caption,
-      hashtags: p.hashtags,
-      image_prompt: p.image_prompt,
-      platform: platform || p.platform,
+      post_date: convertToUtc(scheduled_time, payload.timezone, post.post_date),
+      hook: post.hook,
+      caption: post.caption,
+      hashtags: post.hashtags,
+      image_prompt: post.image_prompt,
+      platform: platforms.includes(post.platform) ? post.platform : platforms[0],
       status: "draft" as const,
       asset_url: null,
-      scheduled_time: "09:00:00",
-    }));
+      scheduled_time: `${scheduled_time}:00`,
+    };
 
     const { data, error: insertError } = await supabase
       .from("content_calendar")
-      .insert(rows)
+      .insert(row)
       .select();
 
     if (insertError) {
       throw new Error(`Atomic insert failed: ${insertError.message}. Rolled back.`);
     }
 
-    if (!data || data.length !== 30) {
-      const insertedIds = data?.map((r: { id: string }) => r.id) ?? [];
-      if (insertedIds.length > 0) {
-        await supabase.from("content_calendar").delete().in("id", insertedIds);
-      }
-      throw new Error("Atomic insert incomplete. Rolled back batch to prevent partial calendar.");
+    if (!data || data.length !== 1) {
+      throw new Error("Atomic insert incomplete.");
     }
 
     return new Response(

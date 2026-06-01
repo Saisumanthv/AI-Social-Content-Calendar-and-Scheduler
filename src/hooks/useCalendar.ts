@@ -16,6 +16,10 @@ export function useCalendarPosts(brandId: string | undefined) {
     queryKey: ['calendar', brandId],
     queryFn: () => getCalendarPosts(brandId!),
     enabled: !!brandId,
+    refetchInterval: query => {
+      const posts = query.state.data;
+      return posts?.some(post => post.status === 'scheduled') ? 30_000 : false;
+    },
   });
 }
 

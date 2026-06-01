@@ -117,7 +117,16 @@ async function handle(req: Request) {
     const url = new URL(req.url);
     const platform = url.searchParams.get('platform') || 'linkedin';
     const code = url.searchParams.get('code');
-    const state = url.searchParams.get('state');
+    const state = url.searchParams.get('state') || '';
+    let csrfState = '';
+    let brandId = '';
+    if (state.includes(':')) {
+      const parts = state.split(':');
+      csrfState = parts[0] || '';
+      brandId = parts[1] || '';
+    } else {
+      brandId = state;
+    }
 
     if (!code) {
       return new Response(JSON.stringify({ error: 'code required' }), { status: 400 });
@@ -145,9 +154,7 @@ async function handle(req: Request) {
     const supabase = createClient(supabaseUrl, serviceKey);
 
     // Upsert into platform_connections. Expect state to be brand_id or similar.
-    const brandId = state || '';
-
-    const { data, error } = await supabase
+    const { error } = await supabase
       .from('platform_connections')
       .upsert({
         brand_id: brandId,
@@ -169,7 +176,7 @@ async function handle(req: Request) {
     const clientUrl = Deno.env.get('OAUTH_CLIENT_URL') || Deno.env.get('OAUTH_REDIRECT_URI');
     if (!clientUrl) throw new Error('OAUTH_CLIENT_URL not configured');
     const userMessage = `${platform === 'linkedin' ? 'LinkedIn account connected successfully.' : `${platform} account connected successfully.`}`;
-    const redirectUrl = `${clientUrl.replace(/\/$/, '')}/_oauth_complete.html?platform=${encodeURIComponent(platform)}&status=connected&message=${encodeURIComponent(userMessage)}`;
+    const redirectUrl = `${clientUrl.replace(/\/$/, '')}/_oauth_complete.html?platform=${encodeURIComponent(platform)}&status=connected&message=${encodeURIComponent(userMessage)}&csrf=${encodeURIComponent(csrfState)}`;
     return Response.redirect(redirectUrl, 302);
   } catch (err) {
     console.error('oauth-callback error', err);
@@ -183,7 +190,9 @@ async function handle(req: Request) {
       });
     }
 
-    const redirectUrl = `${clientUrl.replace(/\/$/, '')}/_oauth_complete.html?platform=${encodeURIComponent(platform)}&status=error&message=${encodeURIComponent(message)}`;
+    const state = new URL(req.url).searchParams.get('state') || '';
+    const csrfState = state.split(':')[0] || '';
+    const redirectUrl = `${clientUrl.replace(/\/$/, '')}/_oauth_complete.html?platform=${encodeURIComponent(platform)}&status=error&message=${encodeURIComponent(message)}&csrf=${encodeURIComponent(csrfState)}`;
     return Response.redirect(redirectUrl, 302);
   }
 }

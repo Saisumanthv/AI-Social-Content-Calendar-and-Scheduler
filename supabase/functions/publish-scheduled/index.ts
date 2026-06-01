@@ -93,7 +93,7 @@ async function refreshLinkedInToken(refreshToken: string): Promise<PlatformToken
 async function getLinkedInConnection(supabase: ReturnType<typeof createClient>, brandId: string) {
   return await supabase
     .from('platform_connections')
-    .select('id,encrypted_token,account_id,account_name,expires_at,needs_reauth,status,scopes')
+    .select('id,encrypted_token,account_id,account_name,expires_at,needs_reauth,status,scopes,publish_target_urn')
     .eq('brand_id', brandId)
     .eq('platform_name', 'linkedin')
     .maybeSingle();
@@ -107,34 +107,33 @@ async function updateLinkedInConnection(supabase: ReturnType<typeof createClient
 }
 
 async function uploadLinkedInImage(accessToken: string, ownerUrn: string, assetUrl: string) {
-  const registerBody = {
-    registerUploadRequest: {
-      owner: ownerUrn,
-      recipes: ['urn:li:digitalmediaRecipe:feedshare-image'],
-      serviceRelationships: [{ relationshipType: 'OWNER', identifier: 'urn:li:userGeneratedContent' }],
-    },
-  };
-
-  const registerRes = await timeoutFetch('https://api.linkedin.com/v2/assets?action=registerUpload', {
+  const apiVersion = Deno.env.get('LINKEDIN_API_VERSION') || '202605';
+  const registerRes = await timeoutFetch('https://api.linkedin.com/rest/images?action=initializeUpload', {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${accessToken}`,
       'Content-Type': 'application/json',
       'X-Restli-Protocol-Version': '2.0.0',
+      'LinkedIn-Version': apiVersion,
     },
-    body: JSON.stringify(registerBody),
+    body: JSON.stringify({
+      initializeUploadRequest: {
+        owner: ownerUrn,
+      },
+    }),
   }, 20000);
 
   if (!registerRes.ok) {
-    throw new Error(`LinkedIn registerUpload failed (${registerRes.status})`);
+    const errorBody = await registerRes.text().catch(() => '');
+    throw new Error(`LinkedIn initializeUpload failed (${registerRes.status}): ${errorBody}`);
   }
 
   const registerJson = await registerRes.json();
   const uploadUrl = registerJson?.value?.uploadMechanism?.['com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest']?.uploadUrl;
-  const asset = registerJson?.value?.asset;
+  const asset = registerJson?.value?.image;
 
   if (!uploadUrl || !asset) {
-    throw new Error('LinkedIn registerUpload response missing upload url or asset urn');
+    throw new Error('LinkedIn initializeUpload response missing upload url or asset urn');
   }
 
   const mediaRes = await timeoutFetch(assetUrl, undefined, 20000);
@@ -168,51 +167,50 @@ async function publishToLinkedIn(params: {
   assetUrl: string | null;
   hook: string;
 }) {
-  const ownerUrn = `urn:li:person:${params.accountId}`;
+  const ownerUrn = params.accountId.startsWith('urn:li:') ? params.accountId : `urn:li:person:${params.accountId}`;
   const textParts = [params.caption?.trim(), params.hashtags?.length ? params.hashtags.map((tag) => (tag.startsWith('#') ? tag : `#${tag}`)).join(' ') : '']
     .filter(Boolean);
   const commentary = textParts.join('\n\n') || params.hook || '';
 
-  let mediaCategory: 'NONE' | 'IMAGE' = 'NONE';
-  let mediaItems: Array<Record<string, unknown>> | undefined;
-
+  let assetUrn: string | null = null;
   if (params.assetUrl) {
-    const assetUrn = await uploadLinkedInImage(params.accessToken, ownerUrn, params.assetUrl);
-    mediaCategory = 'IMAGE';
-    mediaItems = [{
-      status: 'READY',
-      media: assetUrn,
-      title: { text: params.hook || 'Scheduled post' },
-    }];
+    assetUrn = await uploadLinkedInImage(params.accessToken, ownerUrn, params.assetUrl);
   }
 
   const postBody: Record<string, unknown> = {
     author: ownerUrn,
+    commentary: commentary,
+    visibility: 'PUBLIC',
+    distribution: {
+      feedDistribution: 'MAIN_FEED',
+      targetEntities: [],
+      thirdPartyDistributionChannels: []
+    },
     lifecycleState: 'PUBLISHED',
-    specificContent: {
-      'com.linkedin.ugc.ShareContent': {
-        shareCommentary: { text: commentary },
-        shareMediaCategory: mediaCategory,
-        ...(mediaItems ? { media: mediaItems } : {}),
-      },
-    },
-    visibility: {
-      'com.linkedin.ugc.MemberNetworkVisibility': 'PUBLIC',
-    },
+    isReshareDisabledByAuthor: false,
+    ...(assetUrn ? {
+      content: {
+        media: {
+          id: assetUrn
+        }
+      }
+    } : {})
   };
 
-  const publishRes = await timeoutFetch('https://api.linkedin.com/v2/ugcPosts', {
+  const apiVersion = Deno.env.get('LINKEDIN_API_VERSION') || '202605';
+  const publishRes = await timeoutFetch('https://api.linkedin.com/rest/posts', {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${params.accessToken}`,
       'Content-Type': 'application/json',
       'X-Restli-Protocol-Version': '2.0.0',
+      'LinkedIn-Version': apiVersion,
     },
     body: JSON.stringify(postBody),
   }, 20000);
 
   if (!publishRes.ok) {
-    const body = await publishRes.text();
+    const body = await publishRes.text().catch(() => '');
     throw new Error(`LinkedIn post publish failed (${publishRes.status}): ${body}`);
   }
 
@@ -305,7 +303,7 @@ async function handle(req: Request) {
 
           const externalPostId = await publishToLinkedIn({
             accessToken,
-            accountId: conn.account_id,
+            accountId: conn.publish_target_urn || conn.account_id,
             caption: p.caption,
             hashtags: Array.isArray(p.hashtags) ? p.hashtags : [],
             assetUrl: p.asset_url,

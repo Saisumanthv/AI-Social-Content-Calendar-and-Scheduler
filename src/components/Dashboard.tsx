@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Settings, LogOut, CalendarDays, AlertCircle, X, RefreshCw } from 'lucide-react';
+import { Settings, LogOut, CalendarDays, AlertCircle, X, RefreshCw, Link2, ChevronLeft } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useBrandProfile } from '../hooks/useBrandProfile';
 import { useCalendarPosts } from '../hooks/useCalendar';
@@ -7,6 +7,7 @@ import { CalendarGrid } from './CalendarGrid';
 import { GeneratePanel } from './GeneratePanel';
 import { PostEditModal } from './PostEditModal';
 import { BrandOnboarding } from './BrandOnboarding';
+import { ConnectionsPanel } from './ConnectionsPanel';
 import { CalendarSkeleton } from './ui/Skeleton';
 import { Button } from './ui/Button';
 import type { ContentCalendarPost } from '../types/database';
@@ -20,6 +21,8 @@ export function Dashboard() {
   const [showSettings, setShowSettings] = useState(false);
   const [tokenError, setTokenError] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
+  const [showConnections, setShowConnections] = useState(false);
+  const [connectionMessage, setConnectionMessage] = useState('');
 
   async function handleSignOut() {
     setSigningOut(true);
@@ -41,7 +44,7 @@ export function Dashboard() {
     );
   }
 
-  if (!brand) {
+  if (!brand || !brand.brand_name) {
     return <BrandOnboarding onComplete={() => {}} />;
   }
 
@@ -50,10 +53,50 @@ export function Dashboard() {
       <BrandOnboarding
         existingProfile={brand}
         onComplete={() => setShowSettings(false)}
+        onBack={() => setShowSettings(false)}
       />
     );
   }
 
+  if (showConnections) {
+    return (
+      <div className="min-h-screen bg-background">
+        <header className="bg-card border-b border-border sticky top-0 z-40">
+          <div className="max-w-screen-xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 bg-primary-600 rounded-lg flex items-center justify-center text-white">
+                <Link2 size={18} />
+              </div>
+              <div className="hidden sm:block">
+                <p className="text-sm font-semibold text-foreground leading-tight">Connections</p>
+                <p className="text-xs text-muted-foreground">Link your social accounts</p>
+              </div>
+            </div>
+
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowConnections(false)}
+              icon={<ChevronLeft size={16} />}
+            >
+              Back
+            </Button>
+          </div>
+        </header>
+
+        <main className="max-w-screen-xl mx-auto px-4 sm:px-6 py-6 space-y-4">
+          {connectionMessage && (
+            <div className="rounded-lg border border-primary-200 bg-primary-50 px-4 py-3 text-sm text-primary-700">
+              {connectionMessage}
+            </div>
+          )}
+          <ConnectionsPanel brand={brand} onMessage={setConnectionMessage} />
+        </main>
+      </div>
+    );
+  }
+
+  const activeCount = posts.filter(p => p.status === 'draft' || p.status === 'scheduled').length;
   const draftCount = posts.filter(p => p.status === 'draft').length;
   const scheduledCount = posts.filter(p => p.status === 'scheduled').length;
   const publishedCount = posts.filter(p => p.status === 'published').length;
@@ -87,7 +130,14 @@ export function Dashboard() {
           </div>
 
           <div className="flex items-center gap-2">
-            <GeneratePanel brand={brand} hasExistingPosts={posts.length > 0} />
+            <GeneratePanel brand={brand} activePostCount={activeCount} />
+            <button
+              onClick={() => setShowConnections(true)}
+              title="Connections"
+              className="p-1.5 rounded text-muted-foreground hover:text-primary-600 hover:bg-primary-50 transition-colors"
+            >
+              <Link2 size={16} />
+            </button>
             <Button
               variant="ghost"
               size="sm"
@@ -127,9 +177,9 @@ export function Dashboard() {
             </div>
             <h2 className="text-xl font-semibold text-foreground mb-2">Your calendar is empty</h2>
             <p className="text-muted-foreground text-sm max-w-xs mb-6">
-              Generate a 30-day AI content plan tailored to <strong>{brand.brand_name}</strong> and start scheduling.
+              Generate an AI content plan tailored to <strong>{brand.brand_name}</strong> and start scheduling.
             </p>
-            <GeneratePanel brand={brand} hasExistingPosts={false} />
+            <GeneratePanel brand={brand} activePostCount={activeCount} />
           </div>
         )}
 
@@ -139,6 +189,7 @@ export function Dashboard() {
           ) : (
             <CalendarGrid
               posts={posts}
+              brandTimezone={brand.timezone}
               loading={postsLoading}
               onEditPost={setEditingPost}
               onTokenError={() => setTokenError(true)}
@@ -152,6 +203,7 @@ export function Dashboard() {
         brandId={brand.id}
         onClose={() => setEditingPost(null)}
       />
+
     </div>
   );
 }

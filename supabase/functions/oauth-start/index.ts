@@ -6,7 +6,7 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
 };
 
-function buildLinkedInAuthorizeUrl(state: string) {
+function buildLinkedInAuthorizeUrl(state: string, scopeType: string) {
   const clientId = Deno.env.get('LINKEDIN_CLIENT_ID');
   const redirectUri = Deno.env.get('OAUTH_REDIRECT_URI');
 
@@ -14,11 +14,15 @@ function buildLinkedInAuthorizeUrl(state: string) {
     throw new Error('LINKEDIN_CLIENT_ID or OAUTH_REDIRECT_URI not configured');
   }
 
+  const scopes = scopeType === 'personal'
+    ? 'w_member_social openid profile'
+    : 'w_member_social w_organization_social openid profile';
+
   const params = new URLSearchParams({
     response_type: 'code',
     client_id: clientId,
     redirect_uri: redirectUri,
-    scope: 'w_member_social r_liteprofile',
+    scope: scopes,
     state,
   });
 
@@ -37,6 +41,7 @@ async function handle(req: Request) {
     const body = req.method === 'POST' ? await req.json().catch(() => ({})) : {};
     const platform = (url.searchParams.get('platform') || body.platform || 'linkedin').toLowerCase();
     const state = url.searchParams.get('state') || body.state || '';
+    const scopeType = url.searchParams.get('scope_type') || body.scope_type || 'all';
 
     if (platform !== 'linkedin') {
       return new Response(JSON.stringify({ error: 'Unsupported platform' }), {
@@ -45,7 +50,7 @@ async function handle(req: Request) {
       });
     }
 
-    const authorizeUrl = buildLinkedInAuthorizeUrl(state);
+    const authorizeUrl = buildLinkedInAuthorizeUrl(state, scopeType);
     return new Response(JSON.stringify({ url: authorizeUrl }), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:alpine
+    container_name: social_scheduler_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: always
+
+  publish-runner:
+    build:
+      context: ./runners/publish-runner
+      dockerfile: Dockerfile
+    container_name: social_scheduler_runner
+    depends_on:
+      - redis
+    env_file:
+      - .env
+    environment:
+      - REDIS_URL=redis://redis:6379
+    restart: always
+
+volumes:
+  redis_data:

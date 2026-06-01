@@ -1,43 +1,72 @@
 import { useState } from 'react';
-import { Sparkles, CalendarDays, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { Sparkles, CheckCircle2 } from 'lucide-react';
 import { Button } from './ui/Button';
 import { Modal } from './ui/Modal';
 import { PLATFORMS } from '../lib/timezones';
 import { useGenerateContent } from '../hooks/useCalendar';
 import type { BrandProfile } from '../types/database';
 
-interface Props {
-  brand: BrandProfile;
-  hasExistingPosts: boolean;
+const HOURS = Array.from({ length: 12 }, (_, index) => String(index + 1).padStart(2, '0'));
+const MINUTES = Array.from({ length: 60 }, (_, index) => String(index).padStart(2, '0'));
+const PERIODS = ['AM', 'PM'] as const;
+
+function to24HourTime(hour: string, minute: string, period: string) {
+  const hourNumber = Number.parseInt(hour, 10);
+  const adjustedHour = period === 'PM'
+    ? (hourNumber === 12 ? 12 : hourNumber + 12)
+    : (hourNumber === 12 ? 0 : hourNumber);
+
+  return `${String(adjustedHour).padStart(2, '0')}:${minute}`;
 }
 
-export function GeneratePanel({ brand, hasExistingPosts }: Props) {
+interface Props {
+  brand: BrandProfile;
+  activePostCount: number;
+}
+
+export function GeneratePanel({ brand, activePostCount }: Props) {
   const [open, setOpen] = useState(false);
-  const [platform, setPlatform] = useState('instagram');
+  const [platforms, setPlatforms] = useState(['instagram']);
+  const [scheduledHour, setScheduledHour] = useState('09');
+  const [scheduledMinute, setScheduledMinute] = useState('00');
+  const [scheduledPeriod, setScheduledPeriod] = useState<'AM' | 'PM'>('AM');
+  const [initialIdea, setInitialIdea] = useState('');
   const [startDate, setStartDate] = useState(() => {
     const d = new Date();
     d.setDate(d.getDate() + 1);
     return d.toISOString().split('T')[0];
   });
-  const [confirmOpen, setConfirmOpen] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
 
   const generate = useGenerateContent(brand.id);
+  const canGenerate = activePostCount < 5;
+
+  function togglePlatform(platform: string) {
+    setPlatforms(current => {
+      if (current.includes(platform)) {
+        if (current.length === 1) return current;
+        return current.filter(item => item !== platform);
+      }
+      return [...current, platform];
+    });
+  }
 
   function handleGenerateClick() {
-    if (hasExistingPosts) {
-      setConfirmOpen(true);
-    } else {
+    if (canGenerate) {
       void runGeneration();
+      return;
     }
+
+    setError('You can have up to 5 active posts at a time. Publish, complete, or fail one first.');
   }
 
   async function runGeneration() {
-    setConfirmOpen(false);
     setError('');
     setSuccess(false);
     try {
+      const scheduledTime = to24HourTime(scheduledHour, scheduledMinute, scheduledPeriod);
+
       await generate.mutateAsync({
         brand_id: brand.id,
         brand_name: brand.brand_name,
@@ -46,7 +75,10 @@ export function GeneratePanel({ brand, hasExistingPosts }: Props) {
         target_audience: brand.target_audience,
         timezone: brand.timezone,
         start_date: startDate,
-        platform,
+        platforms,
+        scheduled_time: scheduledTime,
+        initial_idea: initialIdea.trim(),
+        idea: initialIdea.trim(),
       });
       setSuccess(true);
     } catch (err) {
@@ -56,20 +88,26 @@ export function GeneratePanel({ brand, hasExistingPosts }: Props) {
 
   return (
     <>
-      <Button onClick={() => setOpen(true)} icon={<Sparkles size={16} />} size="md">
-        Generate 30-Day Calendar
+      <Button onClick={() => setOpen(true)} icon={<Sparkles size={16} />} size="md" disabled={!canGenerate}>
+        Generate & Schedule Post
       </Button>
 
-      <Modal open={open} onClose={() => setOpen(false)} title="Generate Content Calendar" maxWidth="sm">
+      {!canGenerate && (
+        <p className="mt-2 text-xs text-warning-700">
+          You already have 5 active posts. Finish one to add another.
+        </p>
+      )}
+
+      <Modal open={open} onClose={() => setOpen(false)} title="Generate & Schedule Post" maxWidth="sm">
         <div className="space-y-5">
           {success ? (
             <div className="flex flex-col items-center justify-center py-6 text-center">
               <div className="w-12 h-12 bg-success-100 rounded-full flex items-center justify-center mb-3">
                 <CheckCircle2 size={24} className="text-success-600" />
               </div>
-              <p className="font-semibold text-foreground">Calendar Generated!</p>
+              <p className="font-semibold text-foreground">Post Generated!</p>
               <p className="text-sm text-muted-foreground mt-1">
-                30 posts have been created and added to your calendar.
+                1 post has been created and added to your calendar.
               </p>
               <Button onClick={() => setOpen(false)} className="mt-4" size="md">
                 Done
@@ -77,32 +115,29 @@ export function GeneratePanel({ brand, hasExistingPosts }: Props) {
             </div>
           ) : (
             <>
-              <div className="bg-primary-50 border border-primary-100 rounded-lg p-4">
-                <div className="flex items-start gap-3">
-                  <div className="w-8 h-8 bg-primary-600 rounded-lg flex items-center justify-center text-white shrink-0">
-                    <Sparkles size={16} />
-                  </div>
-                  <div>
-                    <p className="text-sm font-semibold text-primary-800">AI-Powered Generation</p>
-                    <p className="text-xs text-primary-600 mt-0.5">
-                      Groq will create 30 unique posts tailored to <strong>{brand.brand_name}</strong> with your brand tone, content pillars, and audience in mind.
-                    </p>
-                  </div>
-                </div>
+              <div className="space-y-1.5">
+                <label className="label">Your Idea</label>
+                <textarea
+                  className="input min-h-[96px]"
+                  placeholder="Describe the campaign, product, goal, or angle you want Gemini to expand into a content..."
+                  value={initialIdea}
+                  onChange={e => setInitialIdea(e.target.value)}
+                  disabled={generate.isPending}
+                />
               </div>
 
               <div className="space-y-1.5">
-                <label className="label">Target Platform</label>
+                <label className="label">Target Platforms</label>
                 <div className="grid grid-cols-3 gap-2">
                   {PLATFORMS.map(p => (
                     <button
                       key={p.value}
                       type="button"
-                      onClick={() => setPlatform(p.value)}
+                      onClick={() => togglePlatform(p.value)}
                       disabled={generate.isPending}
                       className={`
                         text-sm py-2 px-3 rounded-lg border transition-all duration-150
-                        ${platform === p.value
+                        ${platforms.includes(p.value)
                           ? 'border-primary-500 bg-primary-50 text-primary-700 font-medium'
                           : 'border-border bg-white text-neutral-600 hover:border-neutral-300'}
                         ${generate.isPending ? 'opacity-50 cursor-not-allowed' : ''}
@@ -111,6 +146,56 @@ export function GeneratePanel({ brand, hasExistingPosts }: Props) {
                       {p.label}
                     </button>
                   ))}
+                </div>
+                {/* <p className="text-xs text-muted-foreground">
+                  Select one or more platforms. Gemini will distribute the calendar across them.
+                </p> */}
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="label">Time</label>
+                <div className="grid grid-cols-3 gap-2">
+                  <select
+                    className="input"
+                    value={scheduledHour}
+                    onChange={e => setScheduledHour(e.target.value)}
+                    disabled={generate.isPending}
+                    aria-label="Hour"
+                  >
+                    {HOURS.map(hour => (
+                      <option key={hour} value={hour}>
+                        {hour}
+                      </option>
+                    ))}
+                  </select>
+
+                  <select
+                    className="input"
+                    value={scheduledMinute}
+                    onChange={e => setScheduledMinute(e.target.value)}
+                    disabled={generate.isPending}
+                    aria-label="Minute"
+                  >
+                    {MINUTES.map(minute => (
+                      <option key={minute} value={minute}>
+                        {minute}
+                      </option>
+                    ))}
+                  </select>
+
+                  <select
+                    className="input"
+                    value={scheduledPeriod}
+                    onChange={e => setScheduledPeriod(e.target.value as 'AM' | 'PM')}
+                    disabled={generate.isPending}
+                    aria-label="AM or PM"
+                  >
+                    {PERIODS.map(period => (
+                      <option key={period} value={period}>
+                        {period}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </div>
 
@@ -138,26 +223,6 @@ export function GeneratePanel({ brand, hasExistingPosts }: Props) {
               </div>
             </>
           )}
-        </div>
-      </Modal>
-
-      <Modal open={confirmOpen} onClose={() => setConfirmOpen(false)} title="Replace Existing Calendar?" maxWidth="sm">
-        <div className="space-y-4">
-          <div className="flex items-start gap-3 bg-warning-50 border border-warning-200 rounded-lg p-4">
-            <AlertTriangle size={18} className="text-warning-600 shrink-0 mt-0.5" />
-            <div>
-              <p className="text-sm font-medium text-warning-800">This will delete all draft posts</p>
-              <p className="text-xs text-warning-700 mt-0.5">
-                Scheduled and published posts will be preserved. Only draft posts will be replaced.
-              </p>
-            </div>
-          </div>
-          <div className="flex justify-end gap-3">
-            <Button variant="secondary" onClick={() => setConfirmOpen(false)}>Keep Existing</Button>
-            <Button variant="danger" onClick={() => void runGeneration()} loading={generate.isPending} icon={<CalendarDays size={15} />}>
-              Replace & Generate
-            </Button>
-          </div>
         </div>
       </Modal>
     </>

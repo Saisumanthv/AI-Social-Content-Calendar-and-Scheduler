@@ -37,11 +37,8 @@ export function AuthPage() {
         setMode('signin');
       }
     } catch (err) {
-      // Log full error for debugging (network/CORS etc.)
-      // eslint-disable-next-line no-console
       console.error('Signup error', err);
-      const maybeError = err as any;
-      const msg = maybeError?.message ?? (typeof maybeError === 'string' ? maybeError : JSON.stringify(maybeError));
+      const msg = err instanceof Error ? err.message : String(err);
       // Provide a hint for common "Failed to fetch" issues
       if (typeof msg === 'string' && msg.toLowerCase().includes('failed to fetch')) {
         setError(msg + ' — check VITE_SUPABASE_URL, network, and CORS/redirect settings in Supabase.');
@@ -71,13 +68,13 @@ export function AuthPage() {
             AI-powered social media at scale
           </h1>
           <p className="text-primary-100 text-lg leading-relaxed">
-            Generate a complete 30-day content calendar in seconds. Schedule and auto-publish across every platform.
+            Generate content in seconds. Schedule and auto-publish across every platform.
           </p>
         </div>
 
         <div className="relative space-y-6">
           {[
-            { icon: Sparkles, title: 'AI Content Generation', desc: 'Gemini creates 30 posts tailored to your brand voice' },
+            { icon: Sparkles, title: 'AI Content Generation', desc: 'Gemini creates posts tailored to your brand voice' },
             { icon: CalendarDays, title: 'Visual Calendar', desc: 'Drag, edit, and approve posts in a beautiful grid' },
             { icon: Zap, title: 'Auto-Publishing', desc: 'n8n orchestrates posts to Meta, Instagram, and more' },
           ].map(({ icon: Icon, title, desc }) => (
@@ -110,7 +107,7 @@ export function AuthPage() {
           <p className="text-muted-foreground text-sm mb-8">
             {mode === 'signin'
               ? 'Sign in to your ContentFlow workspace'
-              : 'Start your 30-day AI content journey'}
+              : 'Start your AI content journey'}
           </p>
 
           <form onSubmit={handleSubmit} className="space-y-4">
